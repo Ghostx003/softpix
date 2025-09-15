@@ -1,0 +1,921 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark" data-accent="green">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Softpix</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        /* CSS Variables for Theming */
+        :root { /* Light theme */
+            --bg-primary: #f9fafb; --bg-secondary: #ffffff; --bg-tertiary: #f3f4f6;
+            --text-primary: #1f2937; --text-secondary: #6b7280; --text-on-accent: #ffffff;
+            --border-primary: #e5e7eb; --border-secondary: #d1d5db;
+        }
+        
+        html[data-theme="dark"] { /* Dark theme */
+            --bg-primary: #000000; --bg-secondary: #121212; --bg-tertiary: #1E1E1E;
+            --text-primary: #f5f5f5; --text-secondary: #a3a3a3;
+            --border-primary: #27272a; --border-secondary: #3f3f46;
+        }
+
+        /* Accent Color Variables */
+        html[data-accent="green"] { --accent-primary: #16a34a; --accent-hover: #15803d; --accent-primary_translucent: rgba(34, 197, 94, 0.4); }
+        html[data-accent="blue"] { --accent-primary: #2563eb; --accent-hover: #1d4ed8; --accent-primary_translucent: rgba(59, 130, 246, 0.4); }
+        html[data-accent="red"] { --accent-primary: #dc2626; --accent-hover: #b91c1c; --accent-primary_translucent: rgba(239, 68, 68, 0.4); }
+        html[data-accent="purple"] { --accent-primary: #9333ea; --accent-hover: #7e22ce; --accent-primary_translucent: rgba(168, 85, 247, 0.4); }
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            transition: background-color 0.2s, color 0.2s;
+            margin: 0;
+        }
+        
+        /* General UI Element Styling */
+        .btn-primary { 
+            background-color: var(--accent-primary); color: var(--text-on-accent); padding: 0.6rem 1.2rem;
+            border-radius: 0.5rem; border: none; font-weight: 600; cursor: pointer; transition: background-color 0.2s;
+        }
+        .btn-primary:hover { background-color: var(--accent-hover); }
+        .btn-secondary {
+            background-color: var(--bg-tertiary); color: var(--text-primary); padding: 0.5rem 1rem;
+            border-radius: 0.5rem; border: 1px solid var(--border-primary); font-weight: 600;
+            cursor: pointer; transition: background-color 0.2s;
+        }
+        .btn-secondary:hover { background-color: var(--border-primary); }
+        .input-main { 
+            background-color: var(--bg-tertiary); border: 1px solid var(--border-secondary); color: var(--text-primary);
+            border-radius: 0.5rem; padding: 0.75rem; width: 100%; box-sizing: border-box;
+        }
+        .input-main:focus { 
+            border-color: var(--accent-primary); outline: none; 
+            box-shadow: 0 0 0 2px var(--accent-primary_translucent);
+        }
+
+        /* --- Nav Bar & Sidebar Styles --- */
+        .navbar {
+            padding: 0.75rem 1.5rem; background-color: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-primary); display: flex;
+            justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 50;
+        }
+        .navbar .logo { font-size: 1.5rem; font-weight: 700; }
+        .nav-controls { display: flex; align-items: center; gap: 1rem; }
+        .sort-select {
+            background-color: var(--bg-tertiary); color: var(--text-primary); font-weight: 500;
+            border: 1px solid var(--border-primary); border-radius: 0.375rem; padding: 0.5rem; appearance: none;
+        }
+        .hamburger-menu { background: none; border: none; cursor: pointer; padding: 0.5rem; }
+        .hamburger-menu svg { stroke: var(--text-primary); }
+        .sidebar-overlay {
+            position: fixed; inset: 0; background-color: rgba(0,0,0,0);
+            z-index: 998; transition: background-color 0.3s; pointer-events: none;
+        }
+        .sidebar-overlay.visible { background-color: rgba(0,0,0,0.5); pointer-events: all; }
+        .sidebar {
+            position: fixed; top: 0; right: 0; height: 100%; width: 280px;
+            background-color: var(--bg-secondary); box-shadow: -5px 0 15px rgba(0,0,0,0.1);
+            z-index: 999; transform: translateX(100%); transition: transform 0.3s ease-in-out;
+            padding: 1.5rem; box-sizing: border-box; display: flex; flex-direction: column; gap: 1rem;
+            overflow-y: auto;
+        }
+        .sidebar.open { transform: translateX(0); }
+        .sidebar-header {
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .sidebar-header h4 { margin: 0; }
+        #close-sidebar-btn {
+            background: none; border: none; color: var(--text-secondary); font-size: 1.5rem;
+            cursor: pointer; padding: 0.25rem; line-height: 1; transition: color 0.2s;
+        }
+        #close-sidebar-btn:hover { color: var(--text-primary); }
+        .theme-btn {
+            width: 3rem; height: 3rem; border-radius: 50%; border: 3px solid transparent;
+            cursor: pointer; transition: border-color 0.2s;
+        }
+        .theme-btn.active { border-color: var(--accent-primary); }
+        #user-profile-form, #add-image-url-form { display: flex; flex-direction: column; gap: 0.75rem; }
+        #user-profile-form label, #add-image-url-form label { font-size: 0.9rem; font-weight: 500; color: var(--text-secondary); }
+
+        /* --- Tag Bar --- */
+        .tag-bar {
+            background-color: var(--bg-secondary); display: flex; align-items: center;
+            gap: 0.75rem; padding: 0.75rem 1.5rem; border-bottom: 1px solid var(--border-primary);
+            overflow-x: auto; white-space: nowrap;
+        }
+        .tag-bar::-webkit-scrollbar { height: 4px; }
+        .tag-bar::-webkit-scrollbar-thumb { background: var(--border-secondary); border-radius: 2px; }
+        .tag-btn-container { position: relative; display: inline-flex; align-items: center; }
+        .tag-btn {
+            background-color: var(--bg-tertiary); color: var(--text-secondary); padding: 0.3rem 0.8rem;
+            border: 1px solid var(--border-primary); border-radius: 999px; font-size: 0.8rem;
+            font-weight: 500; cursor: pointer; transition: all 0.2s;
+        }
+        .tag-btn:hover, .tag-btn.active { background-color: var(--accent-primary); color: var(--text-on-accent); border-color: var(--accent-primary); }
+        .delete-tag-btn {
+            position: absolute; right: -5px; top: -5px; width: 18px; height: 18px; border-radius: 50%;
+            background-color: #f44336; color: white; border: none; display: flex; align-items: center;
+            justify-content: center; font-size: 0.8rem; line-height: 1; cursor: pointer;
+            opacity: 0; transition: opacity 0.2s, transform 0.2s;
+        }
+        .tag-btn-container:hover .delete-tag-btn { opacity: 1; transform: scale(1.1); }
+        .clear-filter-btn { font-weight: 600; color: var(--accent-primary); background: none; border: none; cursor: pointer; }
+
+
+        /* --- App Specific Styles --- */
+        #image-grid {
+            margin: 2rem; display: grid;
+            gap: 2rem;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+        }
+        .pin-container {
+            position: relative; border-radius: 1rem; overflow: hidden;
+            background-color: var(--bg-tertiary); cursor: pointer;
+            transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+            aspect-ratio: 4 / 3; /* Uniform dimensions */
+        }
+        html[data-theme="dark"] .pin-container:hover {
+            box-shadow: 0 0 15px -2px var(--accent-primary_translucent); transform: translateY(-2px);
+        }
+        .pin-container img { width: 100%; height: 100%; object-fit: cover; }
+        .pin-btn, .delete-btn {
+            position: absolute; background: rgba(0,0,0,0.5);
+            border: none; border-radius: 50%; width: 32px; height: 32px;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer; opacity: 0; transition: opacity 0.2s, background-color 0.2s; z-index: 10;
+        }
+        .pin-container:hover .pin-btn, .pin-container:hover .delete-btn { opacity: 1; }
+        .pin-btn { top: 10px; right: 10px; }
+        .delete-btn { top: 10px; left: 10px; background: rgba(239, 68, 68, 0.7);}
+        .delete-btn:hover { background: rgba(220, 38, 38, 1); }
+        .pin-btn svg, .delete-btn svg { stroke: white; transition: fill 0.2s, stroke 0.2s; }
+        .pin-btn.active { background: var(--accent-primary); }
+        .pin-btn.active svg { fill: white; }
+
+        #empty-state {
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            text-align: center; min-height: 60vh;
+        }
+
+        /* --- Modal Styles --- */
+        #image-modal, #name-modal {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background-color: rgba(0, 0, 0, 0.85); display: none; align-items: center;
+            justify-content: center; z-index: 100;
+        }
+        #name-modal { z-index: 1001; }
+        .modal-content {
+            background-color: var(--bg-secondary); border-radius: 1rem;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2); width: 90%; height: 90%;
+            max-width: 1200px; display: flex; overflow: hidden;
+        }
+        .modal-image-container {
+            flex: 3; background-color: var(--bg-primary); display: flex;
+            align-items: center; justify-content: center; padding: 1rem;
+        }
+        .modal-image-container img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 0.5rem; }
+        .modal-details-container {
+            flex: 1; min-width: 320px; padding: 1.5rem; display: flex;
+            flex-direction: column; border-left: 1px solid var(--border-primary);
+        }
+        .modal-details-container h3 { margin: 0 0 1rem 0; word-wrap: break-word; }
+        #comments-container {
+            overflow-y: auto; margin-bottom: 1rem;
+        }
+        .comment {
+            background-color: var(--bg-tertiary); padding: 0.75rem; border-radius: 0.5rem;
+            margin-bottom: 0.75rem; font-size: 0.9rem; position: relative;
+        }
+        .comment-header { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.25rem; }
+        .comment-avatar {
+            width: 28px; height: 28px; border-radius: 50%; background-color: var(--accent-primary);
+            color: var(--text-on-accent); display: flex; align-items: center;
+            justify-content: center; font-weight: 600; font-size: 0.9rem; flex-shrink: 0;
+            object-fit: cover; border: 1px solid var(--border-primary);
+        }
+        .comment-author { font-weight: 600; }
+        .comment-date { font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.25rem; }
+        .delete-comment-btn {
+            position: absolute; top: 8px; right: 8px; width: 20px; height: 20px; border-radius: 50%;
+            background-color: #f44336; color: white; border: none; display: flex; align-items: center;
+            justify-content: center; font-size: 0.8rem; line-height: 1; cursor: pointer;
+            opacity: 0; transition: opacity 0.2s, transform 0.2s;
+        }
+        .comment:hover .delete-comment-btn { opacity: 1; transform: scale(1.1); }
+        #comment-form { display: flex; align-items: center; gap: 0.5rem; }
+        
+        /* Modal Tagging */
+        .modal-tags-section { margin-top: 1rem; border-top: 1px solid var(--border-primary); padding-top: 1rem; }
+        #modal-tags-display, #available-tags-container { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+        #available-tags-container { margin-top: 1rem; }
+        .modal-tag {
+            background-color: var(--bg-tertiary); color: var(--text-secondary); padding: 0.25rem 0.6rem;
+            border-radius: 999px; font-size: 0.8rem;
+        }
+        .available-tag-btn {
+            background-color: var(--bg-tertiary); color: var(--text-secondary); padding: 0.3rem 0.8rem;
+            border: 1px solid var(--border-primary); border-radius: 999px; font-size: 0.8rem;
+            font-weight: 500; cursor: pointer; transition: all 0.2s;
+        }
+        .available-tag-btn.active, .available-tag-btn:hover {
+            background-color: var(--accent-primary); color: var(--text-on-accent); border-color: var(--accent-primary);
+        }
+
+        .modal-nav-btn {
+            position: fixed; top: 50%; transform: translateY(-50%); background: rgba(255, 255, 255, 0.2);
+            border: none; color: white; font-size: 2rem; cursor: pointer; width: 50px; height: 50px;
+            border-radius: 50%; display: flex; align-items: center; justify-content: center;
+            transition: background-color 0.2s;
+        }
+        .modal-nav-btn:hover { background: rgba(255, 255, 255, 0.4); }
+        #prev-btn { left: 2%; }
+        #next-btn { right: 2%; }
+        #close-btn { top: 2%; right: 2%; width: 40px; height: 40px; font-size: 1.5rem; }
+
+        /* Name Prompt Modal */
+        .name-modal-box {
+            background-color: var(--bg-secondary); padding: 2rem; border-radius: 1rem;
+            width: 100%; max-width: 400px; text-align: center;
+        }
+        
+        @media (max-width: 768px) {
+            .modal-content { flex-direction: column; }
+            .modal-details-container { border-left: none; border-top: 1px solid var(--border-primary); flex-grow: 1; min-height: 250px; }
+            .nav-controls { gap: 0.5rem; }
+            .navbar .logo { font-size: 1.25rem; }
+        }
+    </style>
+</head>
+<body>
+    <div id="sidebar-overlay"></div>
+    <div id="sidebar" class="sidebar">
+        <div>
+            <div class="sidebar-header">
+                <h4 class="text-main">Color Palette</h4>
+                <button id="close-sidebar-btn" title="Close menu">&times;</button>
+            </div>
+            <div id="theme-options" style="margin-top: 0.5rem;"></div>
+        </div>
+        <hr style="border-color: var(--border-primary); width: 100%;">
+        <div>
+            <h4 class="text-main" style="margin-bottom: 0.5rem;">User Profile</h4>
+            <form id="user-profile-form">
+                <label for="user-name-edit">Name</label>
+                <input type="text" id="user-name-edit" class="input-main" required>
+                <label for="user-avatar-url">Avatar URL</label>
+                <input type="url" id="user-avatar-url" class="input-main" placeholder="https://...">
+                <button type="submit" class="btn-primary" style="margin-top: 0.5rem;">Save Profile</button>
+            </form>
+        </div>
+        <hr style="border-color: var(--border-primary); width: 100%;">
+        <div>
+            <h4 class="text-main" style="margin-bottom: 0.5rem;">Add Image by URL</h4>
+            <div id="add-image-url-form">
+                <label for="image-url-input" style="display: none;">Image URL</label>
+                <input type="url" id="image-url-input" class="input-main" placeholder="https://...">
+                <button id="add-url-btn" class="btn-primary">Add Image</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="navbar">
+        <div class="logo">Softpix</div>
+        <div class="nav-controls">
+            <select id="sort-select" class="sort-select">
+                <option value="pinned">Pinned First</option>
+                <option value="newest">Newest First</option>
+                <option value="oldest">Oldest First</option>
+                <option value="popular">Most Popular</option>
+            </select>
+            <button id="select-folder-btn" class="btn-primary">Select Folder</button>
+            <button id="hamburger-menu" class="hamburger-menu">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M4 6H20M4 12H20M4 18H20" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </button>
+        </div>
+    </div>
+    
+    <div id="tag-bar" class="tag-bar"></div>
+
+    <main>
+        <div id="image-grid"></div>
+        <div id="empty-state">
+            <svg class="w-16 h-16 text-subtle" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" style="width: 4rem; height: 4rem;">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
+            </svg>
+            <h2 class="text-xl font-bold mt-4">No Folder Selected</h2>
+            <p class="text-subtle">Click the button above to select a folder of images to display.</p>
+        </div>
+    </main>
+    
+    <div id="image-modal">
+        <div class="modal-content">
+            <div class="modal-image-container">
+                <img id="modal-img" src="" alt="Expanded view">
+            </div>
+            <div class="modal-details-container">
+                <h3 id="modal-title"></h3>
+                
+                <div class="modal-tags-section">
+                    <p class="text-subtle" style="font-weight: 600; font-size: 0.9rem; margin-bottom: 0.5rem;">Tags on this image:</p>
+                    <div id="modal-tags-display"></div>
+                     <form id="tag-form" style="margin-top: 0.75rem;">
+                        <input type="text" id="tag-input" class="input-main" placeholder="Add new tag & press Enter...">
+                    </form>
+                    <p class="text-subtle" style="font-weight: 600; font-size: 0.9rem; margin: 1rem 0 0.5rem 0;">Available Tags:</p>
+                    <div id="available-tags-container"></div>
+                </div>
+
+                <div id="comments-container"></div>
+                <form id="comment-form">
+                    <input type="text" id="comment-input" class="input-main" placeholder="Add a comment..." required>
+                    <button type="submit" class="btn-secondary">Post</button>
+                </form>
+            </div>
+        </div>
+        <button id="close-btn" class="modal-nav-btn">&times;</button>
+        <button id="prev-btn" class="modal-nav-btn">&#10094;</button>
+        <button id="next-btn" class="modal-nav-btn">&#10095;</button>
+    </div>
+
+    <div id="name-modal">
+        <div class="name-modal-box">
+            <h2 class="text-2xl font-bold mb-2 text-main">Welcome to Softpix!</h2>
+            <p class="text-subtle mb-4">Please enter your name to continue.</p>
+            <form id="name-form">
+                <input type="text" id="name-input" class="input-main mb-4" placeholder="Your Name..." required>
+                <button type="submit" class="btn-primary">Save Name</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        // --- DOM Elements ---
+        const imageGrid = document.getElementById('image-grid');
+        const emptyState = document.getElementById('empty-state');
+        const imageModal = document.getElementById('image-modal');
+        const modalImg = document.getElementById('modal-img');
+        const modalTitle = document.getElementById('modal-title');
+        const commentsContainer = document.getElementById('comments-container');
+        const commentForm = document.getElementById('comment-form');
+        const commentInput = document.getElementById('comment-input');
+        const closeBtn = document.getElementById('close-btn');
+        const prevBtn = document.getElementById('prev-btn');
+        const nextBtn = document.getElementById('next-btn');
+        const sortSelect = document.getElementById('sort-select');
+        const tagForm = document.getElementById('tag-form');
+        const tagInput = document.getElementById('tag-input');
+        const modalTagsDisplay = document.getElementById('modal-tags-display');
+        const availableTagsContainer = document.getElementById('available-tags-container');
+        const tagBar = document.getElementById('tag-bar');
+        const hamburgerMenu = document.getElementById('hamburger-menu');
+        const sidebar = document.getElementById('sidebar');
+        const sidebarOverlay = document.getElementById('sidebar-overlay');
+        const closeSidebarBtn = document.getElementById('close-sidebar-btn');
+        const themeOptions = document.getElementById('theme-options');
+        const nameModal = document.getElementById('name-modal');
+        const nameForm = document.getElementById('name-form');
+        const nameInput = document.getElementById('name-input');
+        const userProfileForm = document.getElementById('user-profile-form');
+        const userNameEditInput = document.getElementById('user-name-edit');
+        const userAvatarUrlInput = document.getElementById('user-avatar-url');
+        const imageUrlInput = document.getElementById('image-url-input');
+        const addUrlBtn = document.getElementById('add-url-btn');
+        const selectFolderBtn = document.getElementById('select-folder-btn');
+
+        // --- State ---
+        let localImageFiles = []; 
+        let displayedItems = [];
+        let currentImageIndex = -1;
+        let activeFilterTags = [];
+
+        // --- THEME LOGIC ---
+        const accentColors = [
+            { name: 'green', color: '#16a34a' }, { name: 'blue', color: '#2563eb' },
+            { name: 'red', color: '#dc2626' }, { name: 'purple', color: '#9333ea' }
+        ];
+        const applyAccentColor = (accentName) => {
+            document.documentElement.setAttribute('data-accent', accentName);
+            localStorage.setItem('softpixAccentColor', accentName);
+            updateActiveThemeButtons();
+        };
+        const updateActiveThemeButtons = () => {
+            const currentAccent = document.documentElement.dataset.accent;
+            document.querySelectorAll('.theme-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.accent === currentAccent));
+        };
+        const populateThemeSidebar = () => {
+            const accentSwatches = document.createElement('div');
+            accentSwatches.classList.add('flex', 'items-center', 'justify-start', 'gap-4');
+            accentColors.forEach(accent => {
+                const swatch = document.createElement('button');
+                swatch.dataset.accent = accent.name;
+                swatch.classList.add('theme-btn');
+                swatch.style.backgroundColor = accent.color;
+                swatch.addEventListener('click', () => applyAccentColor(accent.name));
+                accentSwatches.appendChild(swatch);
+            });
+            themeOptions.appendChild(accentSwatches);
+            updateActiveThemeButtons();
+        };
+
+        // --- Persistence with IndexedDB for Folder Handle ---
+        function openDB() {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open('galleryDB', 1);
+                request.onupgradeneeded = e => e.target.result.createObjectStore('folder', { keyPath: 'id' });
+                request.onsuccess = e => resolve(e.target.result);
+                request.onerror = e => reject(e.target.error);
+            });
+        }
+        async function saveFolderHandle(handle) {
+            try {
+                const db = await openDB();
+                const tx = db.transaction('folder', 'readwrite');
+                tx.objectStore('folder').put({ id: 'mainFolder', handle });
+                return tx.complete;
+            } catch(e) { console.error("Could not save folder handle.", e); }
+        }
+        async function getSavedFolderHandle() {
+            try {
+                const db = await openDB();
+                return new Promise((resolve) => {
+                    const tx = db.transaction('folder', 'readonly');
+                    const req = tx.objectStore('folder').get('mainFolder');
+                    req.onsuccess = () => resolve(req.result ? req.result.handle : null);
+                    req.onerror = () => resolve(null);
+                });
+            } catch(e) {
+                console.error("Could not retrieve folder handle.", e);
+                return null;
+            }
+        }
+
+        // --- File System & Image Loading ---
+        async function getFolder() {
+            try {
+                const folderHandle = await window.showDirectoryPicker();
+                await saveFolderHandle(folderHandle);
+                await loadLocalImages(folderHandle);
+                await renderGrid();
+            } catch (err) { console.error('Error selecting folder:', err); }
+        }
+
+        async function loadLocalImages(handle) {
+            if (!handle) { 
+                localImageFiles = [];
+                return;
+            };
+            
+            const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg'];
+            const files = [];
+            try {
+                for await (const entry of handle.values()) {
+                    if (entry.kind === 'file' && imageExtensions.some(ext => entry.name.toLowerCase().endsWith(ext))) {
+                        const file = await entry.getFile();
+                        files.push({
+                            handle: entry, name: entry.name, lastModified: file.lastModified
+                        });
+                    }
+                }
+                localImageFiles = files;
+            } catch (e) {
+                console.error("Error reading files. Permission may have been revoked.", e);
+                alert("Could not read files. Please re-select the folder.");
+                localImageFiles = [];
+            }
+        }
+        
+        // --- External URL Logic ---
+        function addImageByUrl(url) {
+            if (!url) return;
+            let savedUrls = getFromStorage('externalImageUrls') || [];
+            if (!savedUrls.includes(url)) {
+                savedUrls.push(url);
+                saveToStorage('externalImageUrls', savedUrls);
+                renderGrid();
+            }
+        }
+
+        // --- Unified Grid Rendering ---
+        async function renderGrid() {
+            imageGrid.innerHTML = '';
+            
+            let items = [];
+            localImageFiles.forEach(fileData => items.push({ type: 'local', ...fileData }));
+            const savedUrls = getFromStorage('externalImageUrls') || [];
+            savedUrls.forEach(url => items.push({ type: 'external', name: url.split('/').pop().split('?')[0], url: url, lastModified: 0 }));
+
+            const sortBy = sortSelect.value;
+            const popularity = getFromStorage('imagePopularity') || {};
+            const pinnedImages = getFromStorage('pinnedImages') || [];
+            items.sort((a, b) => {
+                if (sortBy === 'pinned') {
+                    const aIsPinned = pinnedImages.includes(a.name);
+                    const bIsPinned = pinnedImages.includes(b.name);
+                    if (aIsPinned !== bIsPinned) return bIsPinned - aIsPinned;
+                }
+                if (sortBy === 'newest' || sortBy === 'pinned') return b.lastModified - a.lastModified;
+                if (sortBy === 'oldest') return a.lastModified - b.lastModified;
+                if (sortBy === 'popular') return (popularity[b.name] || 0) - (popularity[a.name] || 0);
+                return 0;
+            });
+            
+            if (activeFilterTags.length > 0) {
+                const allTags = getFromStorage('imageTags') || {};
+                items = items.filter(item => {
+                    const itemTags = allTags[item.name] || [];
+                    return activeFilterTags.some(filterTag => itemTags.includes(filterTag));
+                });
+            }
+
+            displayedItems = items;
+
+            if (displayedItems.length === 0) {
+                emptyState.style.display = 'flex';
+                imageGrid.style.display = 'none';
+                return;
+            }
+            emptyState.style.display = 'none';
+            imageGrid.style.display = 'grid';
+
+            displayedItems.forEach(async (item, index) => {
+                let imageUrl;
+                if (item.type === 'local') {
+                    const file = await item.handle.getFile();
+                    imageUrl = URL.createObjectURL(file);
+                } else { imageUrl = item.url; }
+
+                const pinContainer = document.createElement('div');
+                pinContainer.classList.add('pin-container');
+                const imgElement = document.createElement('img');
+                imgElement.src = imageUrl;
+                imgElement.onerror = () => { pinContainer.remove(); };
+                
+                const pinBtn = document.createElement('button');
+                pinBtn.classList.add('pin-btn');
+                pinBtn.title = "Pin image";
+                pinBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15.05 3.55L12 6.6L8.95 3.55C7.99 2.59 6.51 2.59 5.55 3.55C4.59 4.51 4.59 5.99 5.55 6.95L8.38 9.78C7.6 10.56 7.12 11.22 7 12H12V21L13 22L14 21V12H17C16.88 11.22 16.4 10.56 15.62 9.78L18.45 6.95C19.41 5.99 19.41 4.51 18.45 3.55C17.49 2.59 16.01 2.59 15.05 3.55Z"></path></svg>`;
+                if (pinnedImages.includes(item.name)) pinBtn.classList.add('active');
+                pinBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    togglePin(item.name, pinBtn);
+                });
+
+                const deleteBtn = document.createElement('button');
+                deleteBtn.classList.add('delete-btn');
+                deleteBtn.title = "Remove image from gallery";
+                deleteBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>`;
+                deleteBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    deleteImage(item);
+                });
+                
+                pinContainer.appendChild(imgElement);
+                pinContainer.appendChild(pinBtn);
+                pinContainer.appendChild(deleteBtn);
+                imageGrid.appendChild(pinContainer);
+                pinContainer.addEventListener('click', () => openModal(index));
+            });
+        }
+        
+        // --- Modal & Sidebar Logic ---
+        async function openModal(index) {
+            if (index < 0 || index >= displayedItems.length) return;
+            currentImageIndex = index;
+            const item = displayedItems[index];
+            trackPopularity(item.name);
+            
+            let imageUrl;
+            if(item.type === 'local') {
+                const file = await item.handle.getFile();
+                imageUrl = URL.createObjectURL(file);
+            } else { imageUrl = item.url; }
+
+            modalImg.src = imageUrl;
+            modalTitle.textContent = item.name;
+            imageModal.style.display = 'flex';
+            document.body.style.overflow = 'hidden';
+
+            loadComments(item.name);
+            loadTagsForModal(item.name);
+            loadAvailableTags(item.name);
+        }
+        function closeModal() {
+            imageModal.style.display = 'none';
+            if (modalImg.src.startsWith('blob:')) URL.revokeObjectURL(modalImg.src);
+            modalImg.src = '';
+            document.body.style.overflow = 'auto';
+        }
+        function closeSidebar() {
+            sidebar.classList.remove('open');
+            sidebarOverlay.classList.remove('visible');
+        }
+        function showNextImage() { openModal((currentImageIndex + 1) % displayedItems.length); }
+        function showPrevImage() { openModal((currentImageIndex - 1 + displayedItems.length) % displayedItems.length); }
+
+        // --- Local Storage & User Logic ---
+        function getFromStorage(key) {
+            const item = localStorage.getItem(key);
+            return item ? JSON.parse(item) : null;
+        }
+        function saveToStorage(key, data) {
+            localStorage.setItem(key, JSON.stringify(data));
+        }
+        function trackPopularity(imageName) {
+            const popularity = getFromStorage('imagePopularity') || {};
+            popularity[imageName] = (popularity[imageName] || 0) + 1;
+            saveToStorage('imagePopularity', popularity);
+        }
+
+        // --- Image, Comments, Tags, and Pins Logic ---
+        function deleteImage(itemToDelete) {
+            // Remove from source arrays
+            if (itemToDelete.type === 'local') {
+                localImageFiles = localImageFiles.filter(file => file.name !== itemToDelete.name);
+            } else if (itemToDelete.type === 'external') {
+                let savedUrls = getFromStorage('externalImageUrls') || [];
+                savedUrls = savedUrls.filter(url => url !== itemToDelete.url);
+                saveToStorage('externalImageUrls', savedUrls);
+            }
+            
+            // Delete all associated data from localStorage
+            const keysToDelete = ['imageComments', 'imageTags', 'imagePopularity', 'pinnedImages'];
+            keysToDelete.forEach(key => {
+                let data = getFromStorage(key);
+                if (data) {
+                    if (Array.isArray(data)) {
+                        data = data.filter(name => name !== itemToDelete.name);
+                    } else if (typeof data === 'object') {
+                        delete data[itemToDelete.name];
+                    }
+                    saveToStorage(key, data);
+                }
+            });
+
+            renderGrid();
+            updateTagBar();
+        }
+
+        function togglePin(imageName, btn) {
+            let pinned = getFromStorage('pinnedImages') || [];
+            if (pinned.includes(imageName)) {
+                pinned = pinned.filter(name => name !== imageName);
+                btn.classList.remove('active');
+            } else {
+                pinned.push(imageName);
+                btn.classList.add('active');
+            }
+            saveToStorage('pinnedImages', pinned);
+            if (sortSelect.value === 'pinned') renderGrid();
+        }
+
+        function loadComments(imageName) {
+            commentsContainer.innerHTML = '';
+            const allComments = getFromStorage('imageComments') || {};
+            const imageComments = allComments[imageName] || [];
+            const avatarUrl = getFromStorage('softpixUserAvatar');
+            const currentUser = getFromStorage('softpixUserName');
+
+            if (imageComments.length === 0) {
+                 commentsContainer.innerHTML = `<p class="text-subtle">No comments yet.</p>`;
+                 return;
+            }
+            imageComments.forEach(comment => {
+                const commentEl = document.createElement('div');
+                commentEl.classList.add('comment');
+                const authorInitial = comment.author ? comment.author.charAt(0).toUpperCase() : '?';
+                const avatar = (avatarUrl && comment.author === currentUser)
+                    ? `<img src="${avatarUrl}" class="comment-avatar" alt="Avatar">`
+                    : `<div class="comment-avatar">${authorInitial}</div>`;
+                const deleteBtn = document.createElement('button');
+                deleteBtn.innerHTML = '&times;';
+                deleteBtn.classList.add('delete-comment-btn');
+                deleteBtn.title = "Delete comment";
+                deleteBtn.addEventListener('click', () => deleteComment(imageName, comment.date));
+                commentEl.innerHTML = `<div class="comment-header">${avatar}<span class="comment-author">${comment.author || 'Anonymous'}</span></div><p>${comment.text}</p><div class="comment-date">${new Date(comment.date).toLocaleString()}</div>`;
+                if (comment.author === currentUser) commentEl.appendChild(deleteBtn);
+                commentsContainer.appendChild(commentEl);
+            });
+        }
+        function addComment(e) {
+            e.preventDefault();
+            const text = commentInput.value.trim();
+            if (!text) return;
+            const imageName = modalTitle.textContent;
+            const allComments = getFromStorage('imageComments') || {};
+            if (!allComments[imageName]) allComments[imageName] = [];
+            allComments[imageName].push({ text, author: getFromStorage('softpixUserName'), date: new Date().toISOString() });
+            saveToStorage('imageComments', allComments);
+            loadComments(imageName);
+            commentForm.reset();
+        }
+        function deleteComment(imageName, timestamp) {
+            const allComments = getFromStorage('imageComments') || {};
+            if (!allComments[imageName]) return;
+            allComments[imageName] = allComments[imageName].filter(c => c.date !== timestamp);
+            saveToStorage('imageComments', allComments);
+            loadComments(imageName);
+        }
+        
+        function loadTagsForModal(imageName) {
+            modalTagsDisplay.innerHTML = '';
+            const allTags = getFromStorage('imageTags') || {};
+            const imageTags = allTags[imageName] || [];
+            if(imageTags.length === 0) modalTagsDisplay.innerHTML = `<p class="text-subtle" style="font-size:0.8rem">No tags yet.</p>`;
+            else imageTags.forEach(tag => {
+                const tagEl = document.createElement('span');
+                tagEl.classList.add('modal-tag');
+                tagEl.textContent = tag;
+                modalTagsDisplay.appendChild(tagEl);
+            });
+        }
+        
+        function addTag(e) {
+            e.preventDefault();
+            const tagText = tagInput.value.trim().toLowerCase();
+            if (!tagText) return;
+            const imageName = modalTitle.textContent;
+            toggleTag(tagText, imageName);
+            tagForm.reset();
+        }
+
+        function loadAvailableTags(imageName) {
+            availableTagsContainer.innerHTML = '';
+            const allTags = getFromStorage('imageTags') || {};
+            const uniqueTags = new Set(Object.values(allTags).flat());
+            const currentImageTags = allTags[imageName] || [];
+
+            if (uniqueTags.size === 0) {
+                availableTagsContainer.innerHTML = `<p class="text-subtle" style="font-size:0.8rem">Create a tag to get started.</p>`;
+                return;
+            }
+
+            uniqueTags.forEach(tag => {
+                const tagBtn = document.createElement('button');
+                tagBtn.classList.add('available-tag-btn');
+                tagBtn.textContent = tag;
+                if (currentImageTags.includes(tag)) tagBtn.classList.add('active');
+                tagBtn.addEventListener('click', () => toggleTag(tag, imageName));
+                availableTagsContainer.appendChild(tagBtn);
+            });
+        }
+
+        function toggleTag(tagName, imageName) {
+            const allTags = getFromStorage('imageTags') || {};
+            if (!allTags[imageName]) allTags[imageName] = [];
+            
+            if (allTags[imageName].includes(tagName)) {
+                allTags[imageName] = allTags[imageName].filter(t => t !== tagName);
+            } else {
+                allTags[imageName].push(tagName);
+            }
+
+            saveToStorage('imageTags', allTags);
+            loadTagsForModal(imageName);
+            loadAvailableTags(imageName);
+            updateTagBar();
+        }
+
+        function updateTagBar() {
+            tagBar.innerHTML = '';
+            const allTags = getFromStorage('imageTags') || {};
+            const uniqueTags = new Set(Object.values(allTags).flat());
+            
+            if (uniqueTags.size > 0) {
+                const clearBtn = document.createElement('button');
+                clearBtn.textContent = 'Clear Filter';
+                clearBtn.classList.add('clear-filter-btn');
+                clearBtn.addEventListener('click', () => {
+                    activeFilterTags = [];
+                    renderGrid();
+                    updateTagBar();
+                });
+                tagBar.appendChild(clearBtn);
+
+                uniqueTags.forEach(tag => {
+                    const container = document.createElement('div');
+                    container.classList.add('tag-btn-container');
+                    const tagBtn = document.createElement('button');
+                    tagBtn.textContent = tag;
+                    tagBtn.dataset.tag = tag;
+                    tagBtn.classList.add('tag-btn');
+                    if (activeFilterTags.includes(tag)) tagBtn.classList.add('active');
+                    tagBtn.addEventListener('click', () => filterByTag(tag, tagBtn));
+                    const deleteBtn = document.createElement('button');
+                    deleteBtn.innerHTML = '&times;';
+                    deleteBtn.classList.add('delete-tag-btn');
+                    deleteBtn.title = "Delete tag from all images";
+                    deleteBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        deleteTag(tag);
+                    });
+                    container.appendChild(tagBtn);
+                    container.appendChild(deleteBtn);
+                    tagBar.appendChild(container);
+                });
+            }
+        }
+        
+        function filterByTag(tag, clickedButton) {
+            const tagIndex = activeFilterTags.indexOf(tag);
+            if (tagIndex > -1) {
+                activeFilterTags.splice(tagIndex, 1);
+            } else {
+                activeFilterTags.push(tag);
+            }
+            renderGrid();
+            updateTagBar();
+        }
+
+        function deleteTag(tagToDelete) {
+            const allTags = getFromStorage('imageTags') || {};
+            for (const imageName in allTags) {
+                allTags[imageName] = allTags[imageName].filter(t => t !== tagToDelete);
+            }
+            saveToStorage('imageTags', allTags);
+            activeFilterTags = activeFilterTags.filter(t => t !== tagToDelete);
+            renderGrid();
+            updateTagBar();
+        }
+
+        // --- Event Listeners ---
+        selectFolderBtn.addEventListener('click', getFolder);
+        addUrlBtn.addEventListener('click', () => {
+            const url = imageUrlInput.value.trim();
+            addImageByUrl(url);
+            imageUrlInput.value = '';
+        });
+        sortSelect.addEventListener('change', renderGrid);
+        closeBtn.addEventListener('click', closeModal);
+        nextBtn.addEventListener('click', showNextImage);
+        prevBtn.addEventListener('click', showPrevImage);
+        commentForm.addEventListener('submit', addComment);
+        tagForm.addEventListener('submit', addTag);
+        hamburgerMenu.addEventListener('click', () => {
+            userNameEditInput.value = getFromStorage('softpixUserName') || '';
+            userAvatarUrlInput.value = getFromStorage('softpixUserAvatar') || '';
+            sidebar.classList.add('open');
+            sidebarOverlay.classList.add('visible');
+        });
+        closeSidebarBtn.addEventListener('click', closeSidebar);
+        sidebarOverlay.addEventListener('click', closeSidebar);
+        imageModal.addEventListener('click', (e) => {
+            if (e.target === imageModal) closeModal();
+        });
+        nameForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const name = nameInput.value.trim();
+            if(name){
+                saveToStorage('softpixUserName', name);
+                nameModal.style.display = 'none';
+            }
+        });
+        userProfileForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const newName = userNameEditInput.value.trim();
+            const newAvatar = userAvatarUrlInput.value.trim();
+            if(newName) saveToStorage('softpixUserName', newName);
+            saveToStorage('softpixUserAvatar', newAvatar);
+            alert('Profile saved!');
+            closeSidebar();
+        });
+        window.addEventListener('keydown', (e) => {
+            if (imageModal.style.display === 'flex') {
+                if (e.key === 'Escape') closeModal();
+                if (document.activeElement.id !== 'comment-input' && document.activeElement.id !== 'tag-input') {
+                    if (e.key === 'ArrowRight') showNextImage();
+                    if (e.key === 'ArrowLeft') showPrevImage();
+                }
+            }
+        });
+        
+        // --- Initialization ---
+        async function init() {
+            if (!getFromStorage('softpixUserName')) {
+                nameModal.style.display = 'flex';
+                nameInput.focus();
+            }
+
+            const savedAccent = localStorage.getItem('softpixAccentColor') || 'green';
+            applyAccentColor(savedAccent);
+            populateThemeSidebar();
+            
+            const folderHandle = await getSavedFolderHandle();
+            if (folderHandle) {
+                const permission = await folderHandle.queryPermission({ mode: 'read' });
+                if (permission === 'granted' || (permission === 'prompt' && await folderHandle.requestPermission({ mode: 'read' }) === 'granted')) {
+                    await loadLocalImages(folderHandle);
+                }
+            }
+            await renderGrid();
+            updateTagBar();
+        }
+        
+        init();
+    });
+    </script>
+</body>
+</html>
