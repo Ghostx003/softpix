@@ -32,6 +32,7 @@
             color: var(--text-primary);
             transition: background-color 0.2s, color 0.2s;
             margin: 0;
+            overflow-x: hidden;
         }
         
         /* General UI Element Styling */
@@ -40,12 +41,12 @@
             border-radius: 0.5rem; border: none; font-weight: 600; cursor: pointer; transition: background-color 0.2s;
         }
         .btn-primary:hover { background-color: var(--accent-hover); }
-        .btn-secondary {
+        .btn-secondary, .btn-icon {
             background-color: var(--bg-tertiary); color: var(--text-primary); padding: 0.5rem 1rem;
             border-radius: 0.5rem; border: 1px solid var(--border-primary); font-weight: 600;
-            cursor: pointer; transition: background-color 0.2s;
+            cursor: pointer; transition: background-color 0.2s; display: flex; align-items: center; justify-content: center;
         }
-        .btn-secondary:hover { background-color: var(--border-primary); }
+        .btn-secondary:hover, .btn-icon:hover { background-color: var(--border-primary); }
         .input-main { 
             background-color: var(--bg-tertiary); border: 1px solid var(--border-secondary); color: var(--text-primary);
             border-radius: 0.5rem; padding: 0.75rem; width: 100%; box-sizing: border-box;
@@ -55,6 +56,27 @@
             box-shadow: 0 0 0 2px var(--accent-primary_translucent);
         }
 
+        /* --- NEW SURPRISE BUTTON STYLE --- */
+        .btn-surprise {
+            background-color: #22c55e; /* Bright Green */
+            color: #022c22; /* Very Dark Green Text */
+            border: 2px solid #16a34a;
+            padding: 0.6rem 1.2rem;
+            border-radius: 0.5rem;
+            font-weight: 700;
+            cursor: pointer;
+            margin-right: 0.5rem;
+            box-shadow: 0 0 10px rgba(34, 197, 94, 0.3);
+            transition: transform 0.2s, box-shadow 0.2s;
+            display: flex; align-items: center; gap: 0.5rem;
+        }
+        .btn-surprise:hover {
+            background-color: #16a34a;
+            color: white;
+            transform: translateY(-1px);
+            box-shadow: 0 0 15px rgba(34, 197, 94, 0.6);
+        }
+
         /* --- Nav Bar & Sidebar Styles --- */
         .navbar {
             padding: 0.75rem 1.5rem; background-color: var(--bg-secondary);
@@ -62,7 +84,7 @@
             justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 50;
         }
         .navbar .logo { font-size: 1.5rem; font-weight: 700; }
-        .nav-controls { display: flex; align-items: center; gap: 1rem; }
+        .nav-controls { display: flex; align-items: center; gap: 0.75rem; }
         .sort-select {
             background-color: var(--bg-tertiary); color: var(--text-primary); font-weight: 500;
             border: 1px solid var(--border-primary); border-radius: 0.375rem; padding: 0.5rem; appearance: none;
@@ -128,6 +150,7 @@
         #image-grid {
             margin: 2rem; display: grid;
             gap: 2rem;
+            /* Default responsive, will be overridden by JS if specific count selected */
             grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
         }
         .pin-container {
@@ -139,7 +162,11 @@
         html[data-theme="dark"] .pin-container:hover {
             box-shadow: 0 0 15px -2px var(--accent-primary_translucent); transform: translateY(-2px);
         }
-        .pin-container img { width: 100%; height: 100%; object-fit: cover; }
+        /* Support for both img and video in grid */
+        .pin-container img, .pin-container video { 
+            width: 100%; height: 100%; object-fit: cover; display: block;
+        }
+        
         .pin-btn, .delete-btn {
             position: absolute; background: rgba(0,0,0,0.5);
             border: none; border-radius: 50%; width: 32px; height: 32px;
@@ -154,10 +181,19 @@
         .pin-btn.active { background: var(--accent-primary); }
         .pin-btn.active svg { fill: white; }
 
-        #empty-state {
+        /* Video Indicator (Optional) */
+        .video-indicator {
+            position: absolute; bottom: 10px; right: 10px; 
+            background: rgba(0,0,0,0.6); color: white;
+            padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; pointer-events: none;
+        }
+
+        #empty-state, #resume-state {
             display: flex; flex-direction: column; align-items: center; justify-content: center;
             text-align: center; min-height: 60vh;
         }
+
+        #resume-state { display: none; }
 
         /* --- Modal Styles --- */
         #image-modal, #name-modal {
@@ -173,17 +209,55 @@
         }
         .modal-image-container {
             flex: 3; background-color: var(--bg-primary); display: flex;
-            align-items: center; justify-content: center; padding: 1rem;
+            align-items: center; justify-content: center; padding: 1rem; position: relative;
         }
-        .modal-image-container img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 0.5rem; }
+        /* Modal media styles */
+        .modal-image-container img, .modal-image-container video { 
+            max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 0.5rem; 
+        }
+        .hidden-media { display: none !important; }
+
         .modal-details-container {
             flex: 1; min-width: 320px; padding: 1.5rem; display: flex;
             flex-direction: column; border-left: 1px solid var(--border-primary);
         }
         .modal-details-container h3 { margin: 0 0 1rem 0; word-wrap: break-word; }
+        
         #comments-container {
-            overflow-y: auto; margin-bottom: 1rem;
+            overflow-y: auto; margin-bottom: 1rem; flex-grow: 1; 
+            /* Ensure comments don't push the toggle off screen */
+            min-height: 0; 
         }
+        
+        /* RATING STYLES (NEW) */
+        .rating-section {
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .rating-stars {
+            display: flex;
+            gap: 2px;
+            cursor: pointer;
+        }
+        .star-icon {
+            width: 24px;
+            height: 24px;
+            fill: none;
+            stroke: var(--text-secondary);
+            stroke-width: 1.5;
+            transition: fill 0.2s, stroke 0.2s, transform 0.1s;
+        }
+        /* Active or Hovered State */
+        .star-icon.filled {
+            fill: #fbbf24; /* Gold/Yellow */
+            stroke: #d97706;
+        }
+        .star-icon:hover {
+            transform: scale(1.2);
+        }
+
         .comment {
             background-color: var(--bg-tertiary); padding: 0.75rem; border-radius: 0.5rem;
             margin-bottom: 0.75rem; font-size: 0.9rem; position: relative;
@@ -204,10 +278,42 @@
             opacity: 0; transition: opacity 0.2s, transform 0.2s;
         }
         .comment:hover .delete-comment-btn { opacity: 1; transform: scale(1.1); }
-        #comment-form { display: flex; align-items: center; gap: 0.5rem; }
+        #comment-form { display: flex; align-items: center; gap: 0.5rem; margin-top: 0; flex-shrink: 0; }
         
+        /* Playback Controls (Switch) */
+        .playback-controls {
+            margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border-primary);
+            flex-shrink: 0; /* Don't shrink this section */
+        }
+        .switch-container {
+            display: flex; align-items: center; justify-content: space-between; cursor: pointer;
+        }
+        .switch-label {
+            font-weight: 600; font-size: 0.9rem; color: var(--text-primary);
+        }
+        .switch {
+            position: relative; display: inline-block; width: 44px; height: 24px;
+        }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider {
+            position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
+            background-color: var(--bg-tertiary); transition: .4s;
+            border: 1px solid var(--border-secondary); border-radius: 24px;
+        }
+        .slider:before {
+            position: absolute; content: ""; height: 18px; width: 18px; left: 2px; bottom: 2px;
+            background-color: var(--text-secondary); transition: .4s; border-radius: 50%;
+        }
+        input:checked + .slider { background-color: var(--accent-primary); border-color: var(--accent-primary); }
+        input:checked + .slider:before { transform: translateX(20px); background-color: white; }
+
+
         /* Modal Tagging */
-        .modal-tags-section { margin-top: 1rem; border-top: 1px solid var(--border-primary); padding-top: 1rem; }
+        .modal-tags-section { 
+            margin-top: 1rem; border-top: 1px solid var(--border-primary); 
+            padding-top: 1rem; margin-bottom: 1rem;
+            flex-shrink: 0; /* Keep size stable */
+        }
         #modal-tags-display, #available-tags-container { display: flex; flex-wrap: wrap; gap: 0.5rem; }
         #available-tags-container { margin-top: 1rem; }
         .modal-tag {
@@ -283,11 +389,50 @@
     <div class="navbar">
         <div class="logo">Softpix</div>
         <div class="nav-controls">
+            <button id="global-mute-btn" class="btn-icon" title="Toggle Sound on Hover">
+                <svg id="mute-icon-svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                    <line x1="23" y1="9" x2="17" y2="15"></line>
+                    <line x1="17" y1="9" x2="23" y2="15"></line>
+                </svg>
+            </button>
+            
+            <button id="shuffle-grid-btn" class="btn-icon" title="Shuffle Grid View">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="16 3 21 3 21 8"></polyline>
+                    <line x1="4" y1="20" x2="21" y2="3"></line>
+                    <polyline points="21 16 21 21 16 21"></polyline>
+                    <line x1="15" y1="15" x2="21" y2="21"></line>
+                    <line x1="4" y1="4" x2="9" y2="9"></line>
+                </svg>
+            </button>
+
+            <button id="surprise-btn" class="btn-surprise" title="Play a random video">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                   <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                </svg>
+                Surprise Me
+            </button>
+
+            <select id="column-count-select" class="sort-select" title="Items per row">
+                <option value="auto">Auto</option>
+                <option value="3">3 Columns</option>
+                <option value="4">4 Columns</option>
+                <option value="5">5 Columns</option>
+                <option value="6">6 Columns</option>
+                <option value="7">7 Columns</option>
+            </select>
+
             <select id="sort-select" class="sort-select">
                 <option value="pinned">Pinned First</option>
                 <option value="newest">Newest First</option>
                 <option value="oldest">Oldest First</option>
                 <option value="popular">Most Popular</option>
+                <option value="rating-5">5 Stars Only</option>
+                <option value="rating-4">4 Stars Only</option>
+                <option value="rating-3">3 Stars Only</option>
+                <option value="rating-2">2 Stars Only</option>
+                <option value="rating-1">1 Star Only</option>
             </select>
             <button id="select-folder-btn" class="btn-primary">Select Folder</button>
             <button id="hamburger-menu" class="hamburger-menu">
@@ -302,38 +447,68 @@
 
     <main>
         <div id="image-grid"></div>
+        
         <div id="empty-state">
             <svg class="w-16 h-16 text-subtle" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" style="width: 4rem; height: 4rem;">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
             </svg>
             <h2 class="text-xl font-bold mt-4">No Folder Selected</h2>
-            <p class="text-subtle">Click the button above to select a folder of images to display.</p>
+            <p class="text-subtle">Click the button above to select a folder of images and videos to display.</p>
+        </div>
+
+        <div id="resume-state">
+             <svg class="w-16 h-16 text-subtle" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" style="width: 4rem; height: 4rem;">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+            </svg>
+            <h2 class="text-xl font-bold mt-4">Welcome Back</h2>
+            <p class="text-subtle" style="margin-bottom: 1.5rem;">We found your previous folder: <strong id="resume-folder-name">...</strong></p>
+            <button id="resume-btn" class="btn-primary">Resume Session</button>
+            <p class="text-subtle" style="font-size: 0.8rem; margin-top: 1rem;">Browser security requires you to approve access again.</p>
         </div>
     </main>
     
     <div id="image-modal">
         <div class="modal-content">
             <div class="modal-image-container">
-                <img id="modal-img" src="" alt="Expanded view">
+                <img id="modal-img" src="" alt="Expanded view" class="hidden-media">
+                <video id="modal-video" controls class="hidden-media"></video>
             </div>
             <div class="modal-details-container">
                 <h3 id="modal-title"></h3>
                 
                 <div class="modal-tags-section">
-                    <p class="text-subtle" style="font-weight: 600; font-size: 0.9rem; margin-bottom: 0.5rem;">Tags on this image:</p>
+                    <p class="text-subtle" style="font-weight: 600; font-size: 0.9rem; margin-bottom: 0.5rem;">Tags on this item:</p>
                     <div id="modal-tags-display"></div>
-                     <form id="tag-form" style="margin-top: 0.75rem;">
+                      <form id="tag-form" style="margin-top: 0.75rem;">
                         <input type="text" id="tag-input" class="input-main" placeholder="Add new tag & press Enter...">
                     </form>
                     <p class="text-subtle" style="font-weight: 600; font-size: 0.9rem; margin: 1rem 0 0.5rem 0;">Available Tags:</p>
                     <div id="available-tags-container"></div>
                 </div>
 
+                <div id="rating-section" class="rating-section">
+                    <p class="text-subtle" style="font-weight: 600; font-size: 0.9rem; margin: 0;">Rating:</p>
+                    <div id="stars-container" class="rating-stars">
+                        </div>
+                </div>
+
                 <div id="comments-container"></div>
+                
                 <form id="comment-form">
                     <input type="text" id="comment-input" class="input-main" placeholder="Add a comment..." required>
                     <button type="submit" class="btn-secondary">Post</button>
                 </form>
+
+                <div class="playback-controls">
+                    <label class="switch-container">
+                        <span class="switch-label">Shuffle Next Video (Auto-Play)</span>
+                        <div class="switch">
+                            <input type="checkbox" id="shuffle-toggle">
+                            <span class="slider round"></span>
+                        </div>
+                    </label>
+                </div>
+
             </div>
         </div>
         <button id="close-btn" class="modal-nav-btn">&times;</button>
@@ -357,8 +532,13 @@
         // --- DOM Elements ---
         const imageGrid = document.getElementById('image-grid');
         const emptyState = document.getElementById('empty-state');
+        const resumeState = document.getElementById('resume-state'); 
+        const resumeBtn = document.getElementById('resume-btn'); 
+        const resumeFolderName = document.getElementById('resume-folder-name'); 
+
         const imageModal = document.getElementById('image-modal');
         const modalImg = document.getElementById('modal-img');
+        const modalVideo = document.getElementById('modal-video');
         const modalTitle = document.getElementById('modal-title');
         const commentsContainer = document.getElementById('comments-container');
         const commentForm = document.getElementById('comment-form');
@@ -367,6 +547,9 @@
         const prevBtn = document.getElementById('prev-btn');
         const nextBtn = document.getElementById('next-btn');
         const sortSelect = document.getElementById('sort-select');
+        const columnCountSelect = document.getElementById('column-count-select');
+        const shuffleGridBtn = document.getElementById('shuffle-grid-btn');
+        const surpriseBtn = document.getElementById('surprise-btn'); 
         const tagForm = document.getElementById('tag-form');
         const tagInput = document.getElementById('tag-input');
         const modalTagsDisplay = document.getElementById('modal-tags-display');
@@ -386,12 +569,49 @@
         const imageUrlInput = document.getElementById('image-url-input');
         const addUrlBtn = document.getElementById('add-url-btn');
         const selectFolderBtn = document.getElementById('select-folder-btn');
+        const globalMuteBtn = document.getElementById('global-mute-btn');
+        const muteIconSvg = document.getElementById('mute-icon-svg');
+        const shuffleToggle = document.getElementById('shuffle-toggle');
+        const starsContainer = document.getElementById('stars-container'); // NEW ELEMENT
 
         // --- State ---
         let localImageFiles = []; 
         let displayedItems = [];
         let currentImageIndex = -1;
         let activeFilterTags = [];
+        let isGlobalMute = true;
+        let pendingFolderHandle = null; 
+        
+        // Auto shuffle state
+        let isAutoShuffleOn = false; 
+
+        // --- Mute Logic ---
+        function updateMuteIcon() {
+            if (isGlobalMute) {
+                // Muted Icon
+                muteIconSvg.innerHTML = `
+                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                    <line x1="23" y1="9" x2="17" y2="15"></line>
+                    <line x1="17" y1="9" x2="23" y2="15"></line>
+                `;
+                globalMuteBtn.title = "Current: Muted (Click to Unmute)";
+            } else {
+                // Unmuted (Sound On) Icon
+                muteIconSvg.innerHTML = `
+                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                    <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                `;
+                globalMuteBtn.title = "Current: Sound On (Click to Mute)";
+            }
+        }
+
+        globalMuteBtn.addEventListener('click', () => {
+            isGlobalMute = !isGlobalMute;
+            updateMuteIcon();
+        });
+
+        updateMuteIcon();
+
 
         // --- THEME LOGIC ---
         const accentColors = [
@@ -454,14 +674,46 @@
             }
         }
 
-        // --- File System & Image Loading ---
+        // --- File System & Image/Video Loading (Recursive) ---
+        const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg'];
+        const videoExtensions = ['.mp4', '.webm', '.ogg', '.mov', '.m4v'];
+        const allExtensions = [...imageExtensions, ...videoExtensions];
+
         async function getFolder() {
             try {
-                const folderHandle = await window.showDirectoryPicker();
+                const folderHandle = await window.showDirectoryPicker({
+                    id: 'softpix_working_dir',
+                    startIn: 'downloads'
+                });
                 await saveFolderHandle(folderHandle);
                 await loadLocalImages(folderHandle);
                 await renderGrid();
             } catch (err) { console.error('Error selecting folder:', err); }
+        }
+
+        async function traverseDirectory(dirHandle) {
+            let files = [];
+            try {
+                for await (const entry of dirHandle.values()) {
+                    if (entry.kind === 'file') {
+                        if (allExtensions.some(ext => entry.name.toLowerCase().endsWith(ext))) {
+                            const file = await entry.getFile();
+                            files.push({
+                                handle: entry, 
+                                name: entry.name, 
+                                lastModified: file.lastModified,
+                                isVideo: videoExtensions.some(ext => entry.name.toLowerCase().endsWith(ext))
+                            });
+                        }
+                    } else if (entry.kind === 'directory') {
+                        const subFiles = await traverseDirectory(entry);
+                        files = files.concat(subFiles);
+                    }
+                }
+            } catch (e) {
+                console.warn("Could not read subdirectory", e);
+            }
+            return files;
         }
 
         async function loadLocalImages(handle) {
@@ -469,19 +721,8 @@
                 localImageFiles = [];
                 return;
             };
-            
-            const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg'];
-            const files = [];
             try {
-                for await (const entry of handle.values()) {
-                    if (entry.kind === 'file' && imageExtensions.some(ext => entry.name.toLowerCase().endsWith(ext))) {
-                        const file = await entry.getFile();
-                        files.push({
-                            handle: entry, name: entry.name, lastModified: file.lastModified
-                        });
-                    }
-                }
-                localImageFiles = files;
+                localImageFiles = await traverseDirectory(handle);
             } catch (e) {
                 console.error("Error reading files. Permission may have been revoked.", e);
                 alert("Could not read files. Please re-select the folder.");
@@ -500,29 +741,60 @@
             }
         }
 
+        // --- Grid Shuffle Logic ---
+        function shuffleArray(array) {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+            return array;
+        }
+
+        function shuffleGridItems() {
+            // Shuffle the currently displayed items and re-render grid
+            displayedItems = shuffleArray([...displayedItems]);
+            renderDOM(displayedItems);
+        }
+
         // --- Unified Grid Rendering ---
         async function renderGrid() {
-            imageGrid.innerHTML = '';
-            
             let items = [];
             localImageFiles.forEach(fileData => items.push({ type: 'local', ...fileData }));
             const savedUrls = getFromStorage('externalImageUrls') || [];
-            savedUrls.forEach(url => items.push({ type: 'external', name: url.split('/').pop().split('?')[0], url: url, lastModified: 0 }));
+            
+            savedUrls.forEach(url => {
+                const name = url.split('/').pop().split('?')[0];
+                const isVid = videoExtensions.some(ext => name.toLowerCase().endsWith(ext));
+                items.push({ type: 'external', name: name, url: url, lastModified: 0, isVideo: isVid });
+            });
 
             const sortBy = sortSelect.value;
             const popularity = getFromStorage('imagePopularity') || {};
             const pinnedImages = getFromStorage('pinnedImages') || [];
-            items.sort((a, b) => {
-                if (sortBy === 'pinned') {
-                    const aIsPinned = pinnedImages.includes(a.name);
-                    const bIsPinned = pinnedImages.includes(b.name);
-                    if (aIsPinned !== bIsPinned) return bIsPinned - aIsPinned;
-                }
-                if (sortBy === 'newest' || sortBy === 'pinned') return b.lastModified - a.lastModified;
-                if (sortBy === 'oldest') return a.lastModified - b.lastModified;
-                if (sortBy === 'popular') return (popularity[b.name] || 0) - (popularity[a.name] || 0);
-                return 0;
-            });
+            
+            // FILTERING LOGIC FOR STARS (NEW)
+            if (sortBy.startsWith('rating-')) {
+                const targetRating = parseInt(sortBy.split('-')[1]);
+                const ratings = getFromStorage('imageRatings') || {};
+                // Filter items to keep ONLY those with the specific star rating
+                items = items.filter(item => {
+                    const itemRating = ratings[item.name] || 0;
+                    return itemRating === targetRating;
+                });
+            } else {
+                // Normal Sort Logic
+                items.sort((a, b) => {
+                    if (sortBy === 'pinned') {
+                        const aIsPinned = pinnedImages.includes(a.name);
+                        const bIsPinned = pinnedImages.includes(b.name);
+                        if (aIsPinned !== bIsPinned) return bIsPinned - aIsPinned;
+                    }
+                    if (sortBy === 'newest' || sortBy === 'pinned') return b.lastModified - a.lastModified;
+                    if (sortBy === 'oldest') return a.lastModified - b.lastModified;
+                    if (sortBy === 'popular') return (popularity[b.name] || 0) - (popularity[a.name] || 0);
+                    return 0;
+                });
+            }
             
             if (activeFilterTags.length > 0) {
                 const allTags = getFromStorage('imageTags') || {};
@@ -533,31 +805,75 @@
             }
 
             displayedItems = items;
+            renderDOM(displayedItems);
+        }
 
-            if (displayedItems.length === 0) {
-                emptyState.style.display = 'flex';
-                imageGrid.style.display = 'none';
+        function renderDOM(itemsToRender) {
+            imageGrid.innerHTML = '';
+            
+            if (itemsToRender.length === 0) {
+                // If we have items but they are filtered out, show empty state.
+                // If we literally have no items loaded, show the relevant empty/resume state
+                if (localImageFiles.length === 0 && getFromStorage('externalImageUrls')?.length === 0) {
+                     // handled by init/permission logic
+                     imageGrid.style.display = 'none';
+                } else {
+                     emptyState.style.display = 'flex';
+                     imageGrid.style.display = 'none';
+                }
                 return;
             }
+            
             emptyState.style.display = 'none';
+            resumeState.style.display = 'none'; 
             imageGrid.style.display = 'grid';
 
-            displayedItems.forEach(async (item, index) => {
-                let imageUrl;
+            const pinnedImages = getFromStorage('pinnedImages') || [];
+
+            itemsToRender.forEach(async (item, index) => {
+                let mediaUrl;
                 if (item.type === 'local') {
                     const file = await item.handle.getFile();
-                    imageUrl = URL.createObjectURL(file);
-                } else { imageUrl = item.url; }
+                    mediaUrl = URL.createObjectURL(file);
+                } else { mediaUrl = item.url; }
 
                 const pinContainer = document.createElement('div');
                 pinContainer.classList.add('pin-container');
-                const imgElement = document.createElement('img');
-                imgElement.src = imageUrl;
-                imgElement.onerror = () => { pinContainer.remove(); };
+                
+                let mediaElement;
+                if (item.isVideo) {
+                    mediaElement = document.createElement('video');
+                    mediaElement.loop = true;
+                    mediaElement.setAttribute('playsinline', '');
+                    mediaElement.src = mediaUrl;
+                    
+                    // Hover Play with Global Mute Logic
+                    pinContainer.addEventListener('mouseenter', () => {
+                        mediaElement.muted = isGlobalMute;
+                        const playPromise = mediaElement.play();
+                        if (playPromise !== undefined) {
+                            playPromise.catch(error => {
+                                console.log('Auto-play prevented:', error);
+                                if(!isGlobalMute) { mediaElement.muted = true; mediaElement.play(); }
+                            });
+                        }
+                    });
+
+                    pinContainer.addEventListener('mouseleave', () => {
+                        mediaElement.pause();
+                        mediaElement.currentTime = 0;
+                    });
+
+                } else {
+                    mediaElement = document.createElement('img');
+                    mediaElement.src = mediaUrl;
+                }
+                
+                mediaElement.onerror = () => { pinContainer.remove(); };
                 
                 const pinBtn = document.createElement('button');
                 pinBtn.classList.add('pin-btn');
-                pinBtn.title = "Pin image";
+                pinBtn.title = "Pin item";
                 pinBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15.05 3.55L12 6.6L8.95 3.55C7.99 2.59 6.51 2.59 5.55 3.55C4.59 4.51 4.59 5.99 5.55 6.95L8.38 9.78C7.6 10.56 7.12 11.22 7 12H12V21L13 22L14 21V12H17C16.88 11.22 16.4 10.56 15.62 9.78L18.45 6.95C19.41 5.99 19.41 4.51 18.45 3.55C17.49 2.59 16.01 2.59 15.05 3.55Z"></path></svg>`;
                 if (pinnedImages.includes(item.name)) pinBtn.classList.add('active');
                 pinBtn.addEventListener('click', (e) => {
@@ -567,14 +883,21 @@
 
                 const deleteBtn = document.createElement('button');
                 deleteBtn.classList.add('delete-btn');
-                deleteBtn.title = "Remove image from gallery";
+                deleteBtn.title = "Remove from gallery";
                 deleteBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>`;
                 deleteBtn.addEventListener('click', (e) => {
                     e.stopPropagation();
                     deleteImage(item);
                 });
                 
-                pinContainer.appendChild(imgElement);
+                pinContainer.appendChild(mediaElement);
+                if (item.isVideo) {
+                    const vidIndicator = document.createElement('div');
+                    vidIndicator.classList.add('video-indicator');
+                    vidIndicator.innerText = "VIDEO";
+                    pinContainer.appendChild(vidIndicator);
+                }
+
                 pinContainer.appendChild(pinBtn);
                 pinContainer.appendChild(deleteBtn);
                 imageGrid.appendChild(pinContainer);
@@ -589,13 +912,26 @@
             const item = displayedItems[index];
             trackPopularity(item.name);
             
-            let imageUrl;
+            let mediaUrl;
             if(item.type === 'local') {
                 const file = await item.handle.getFile();
-                imageUrl = URL.createObjectURL(file);
-            } else { imageUrl = item.url; }
+                mediaUrl = URL.createObjectURL(file);
+            } else { mediaUrl = item.url; }
 
-            modalImg.src = imageUrl;
+            // Toggle Image vs Video element in modal
+            if (item.isVideo) {
+                modalImg.classList.add('hidden-media');
+                modalVideo.classList.remove('hidden-media');
+                modalVideo.src = mediaUrl;
+                modalVideo.muted = false; 
+                modalVideo.play().catch(()=>{}); 
+            } else {
+                modalVideo.classList.add('hidden-media');
+                modalImg.classList.remove('hidden-media');
+                modalVideo.pause(); // Stop any previous video
+                modalImg.src = mediaUrl;
+            }
+
             modalTitle.textContent = item.name;
             imageModal.style.display = 'flex';
             document.body.style.overflow = 'hidden';
@@ -603,19 +939,58 @@
             loadComments(item.name);
             loadTagsForModal(item.name);
             loadAvailableTags(item.name);
+            setupRatingUI(item.name); // NEW: Load rating
         }
         function closeModal() {
             imageModal.style.display = 'none';
+            // Cleanup URLs
             if (modalImg.src.startsWith('blob:')) URL.revokeObjectURL(modalImg.src);
+            if (modalVideo.src.startsWith('blob:')) URL.revokeObjectURL(modalVideo.src);
+            
             modalImg.src = '';
+            modalVideo.src = '';
+            modalVideo.pause(); // Stop video
             document.body.style.overflow = 'auto';
         }
         function closeSidebar() {
             sidebar.classList.remove('open');
             sidebarOverlay.classList.remove('visible');
         }
+        
         function showNextImage() { openModal((currentImageIndex + 1) % displayedItems.length); }
         function showPrevImage() { openModal((currentImageIndex - 1 + displayedItems.length) % displayedItems.length); }
+
+
+        // --- NEW: Toggle Listener & Video End Logic ---
+        shuffleToggle.addEventListener('change', (e) => {
+            isAutoShuffleOn = e.target.checked;
+        });
+
+        // Event: When modal video finishes playing
+        modalVideo.addEventListener('ended', () => {
+            if (displayedItems.length <= 1) return; 
+
+            // 1. Check if CURRENT video is PINNED
+            const currentItem = displayedItems[currentImageIndex];
+            const pinnedImages = getFromStorage('pinnedImages') || [];
+            const isCurrentPinned = pinnedImages.includes(currentItem.name);
+
+            // 2. Logic decision
+            if (isCurrentPinned) {
+                showNextImage(); 
+            } else {
+                if (isAutoShuffleOn) {
+                    let nextRandomIndex;
+                    do {
+                        nextRandomIndex = Math.floor(Math.random() * displayedItems.length);
+                    } while (nextRandomIndex === currentImageIndex);
+                    openModal(nextRandomIndex);
+                } else {
+                    showNextImage();
+                }
+            }
+        });
+
 
         // --- Local Storage & User Logic ---
         function getFromStorage(key) {
@@ -631,9 +1006,49 @@
             saveToStorage('imagePopularity', popularity);
         }
 
+        // --- NEW: RATING LOGIC ---
+        function setupRatingUI(imageName) {
+            starsContainer.innerHTML = '';
+            const allRatings = getFromStorage('imageRatings') || {};
+            const currentRating = allRatings[imageName] || 0;
+
+            // Create 5 stars
+            for (let i = 1; i <= 5; i++) {
+                const star = document.createElement('div');
+                star.innerHTML = `<svg class="star-icon ${i <= currentRating ? 'filled' : ''}" viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>`;
+                
+                // Click to set rating
+                star.addEventListener('click', () => {
+                    const ratings = getFromStorage('imageRatings') || {};
+                    ratings[imageName] = i;
+                    saveToStorage('imageRatings', ratings);
+                    updateStarsVisual(i);
+                    // If filtering by rating, grid might need update next time, but simple here.
+                });
+
+                // Hover effects
+                star.addEventListener('mouseover', () => updateStarsVisual(i));
+                
+                starsContainer.appendChild(star);
+            }
+
+            // Mouse leave container: reset to saved rating
+            starsContainer.addEventListener('mouseleave', () => {
+                const savedRatings = getFromStorage('imageRatings') || {};
+                updateStarsVisual(savedRatings[imageName] || 0);
+            });
+        }
+
+        function updateStarsVisual(rating) {
+            const svgs = starsContainer.querySelectorAll('.star-icon');
+            svgs.forEach((svg, index) => {
+                if (index < rating) svg.classList.add('filled');
+                else svg.classList.remove('filled');
+            });
+        }
+
         // --- Image, Comments, Tags, and Pins Logic ---
         function deleteImage(itemToDelete) {
-            // Remove from source arrays
             if (itemToDelete.type === 'local') {
                 localImageFiles = localImageFiles.filter(file => file.name !== itemToDelete.name);
             } else if (itemToDelete.type === 'external') {
@@ -642,8 +1057,7 @@
                 saveToStorage('externalImageUrls', savedUrls);
             }
             
-            // Delete all associated data from localStorage
-            const keysToDelete = ['imageComments', 'imageTags', 'imagePopularity', 'pinnedImages'];
+            const keysToDelete = ['imageComments', 'imageTags', 'imagePopularity', 'pinnedImages', 'imageRatings'];
             keysToDelete.forEach(key => {
                 let data = getFromStorage(key);
                 if (data) {
@@ -842,6 +1256,51 @@
             updateTagBar();
         }
 
+        // --- Column Count Logic ---
+        function updateGridColumns() {
+            const cols = columnCountSelect.value;
+            saveToStorage('softpixGridColumns', cols);
+            if (cols === 'auto') {
+                imageGrid.style.gridTemplateColumns = 'repeat(auto-fill, minmax(300px, 1fr))';
+            } else {
+                imageGrid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+            }
+        }
+        columnCountSelect.addEventListener('change', updateGridColumns);
+
+        // --- NEW: Resume Permission Handler ---
+        resumeBtn.addEventListener('click', async () => {
+             if (pendingFolderHandle) {
+                 const permission = await pendingFolderHandle.requestPermission({ mode: 'read' });
+                 if (permission === 'granted') {
+                     await loadLocalImages(pendingFolderHandle);
+                     await renderGrid();
+                 } else {
+                     alert("Permission denied. Please select the folder again.");
+                 }
+             }
+        });
+
+        // --- NEW: Surprise Me Logic ---
+        surpriseBtn.addEventListener('click', () => {
+            // Filter displayedItems to find videos only
+            const videoIndices = displayedItems
+                .map((item, index) => item.isVideo ? index : -1)
+                .filter(index => index !== -1);
+
+            if (videoIndices.length === 0) {
+                alert("No videos found to surprise you with! Please add some videos or clear filters.");
+                return;
+            }
+
+            // Totally random each time
+            const randomIndex = Math.floor(Math.random() * videoIndices.length);
+            const targetIndex = videoIndices[randomIndex];
+            
+            // Open the modal
+            openModal(targetIndex);
+        });
+
         // --- Event Listeners ---
         selectFolderBtn.addEventListener('click', getFolder);
         addUrlBtn.addEventListener('click', () => {
@@ -850,6 +1309,7 @@
             imageUrlInput.value = '';
         });
         sortSelect.addEventListener('change', renderGrid);
+        shuffleGridBtn.addEventListener('click', shuffleGridItems);
         closeBtn.addEventListener('click', closeModal);
         nextBtn.addEventListener('click', showNextImage);
         prevBtn.addEventListener('click', showPrevImage);
@@ -904,14 +1364,35 @@
             applyAccentColor(savedAccent);
             populateThemeSidebar();
             
+            const savedCols = getFromStorage('softpixGridColumns') || 'auto';
+            columnCountSelect.value = savedCols;
+            updateGridColumns();
+
+            // Load Saved URLs first (they don't need permissions)
+            const savedUrls = getFromStorage('externalImageUrls') || [];
+            if(savedUrls.length > 0) await renderGrid();
+
+            // Check IndexedDB for Folder Handle
             const folderHandle = await getSavedFolderHandle();
             if (folderHandle) {
+                // Check permissions
                 const permission = await folderHandle.queryPermission({ mode: 'read' });
-                if (permission === 'granted' || (permission === 'prompt' && await folderHandle.requestPermission({ mode: 'read' }) === 'granted')) {
+                
+                if (permission === 'granted') {
+                    // Browser still has permission (rare after restart, common on refresh)
                     await loadLocalImages(folderHandle);
+                    await renderGrid();
+                } else if (permission === 'prompt') {
+                    // Handle exists, but user must re-approve.
+                    // We cannot call requestPermission() here automatically (browser blocks it).
+                    // We must show a button.
+                    pendingFolderHandle = folderHandle;
+                    emptyState.style.display = 'none';
+                    imageGrid.style.display = 'none';
+                    resumeState.style.display = 'flex';
+                    resumeFolderName.textContent = folderHandle.name;
                 }
             }
-            await renderGrid();
             updateTagBar();
         }
         
