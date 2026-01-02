@@ -344,27 +344,6 @@
             background-color: var(--bg-secondary); padding: 2rem; border-radius: 1rem;
             width: 100%; max-width: 400px; text-align: center;
         }
-
-        /* --- OPTIMIZED PEEK PREVIEW OVERLAY --- */
-        #preview-overlay {
-            position: fixed; inset: 0; z-index: 90;
-            /* Simple background, NO BLUR */
-            background: rgba(0, 0, 0, 0.85); 
-            display: none; justify-content: center; align-items: center;
-            opacity: 0; transition: opacity 0.2s ease;
-            pointer-events: none; /* Let events pass through initially */
-        }
-        #preview-overlay.active { display: flex; opacity: 1; pointer-events: auto; }
-        #preview-img {
-            max-width: 90vw; max-height: 90vh;
-            border-radius: 8px;
-            /* Simple shadow, no heavy effects */
-            box-shadow: 0 10px 40px rgba(0,0,0,0.8);
-            transform: scale(0.95); 
-            transition: transform 0.2s ease-out;
-            will-change: transform; /* Hint for GPU */
-        }
-        #preview-overlay.active #preview-img { transform: scale(1); }
         
         @media (max-width: 768px) {
             .modal-content { flex-direction: column; }
@@ -375,10 +354,6 @@
     </style>
 </head>
 <body>
-    <div id="preview-overlay">
-        <img id="preview-img">
-    </div>
-
     <div id="sidebar-overlay"></div>
     <div id="sidebar" class="sidebar">
         <div>
@@ -594,7 +569,7 @@
         const columnCountSelect = document.getElementById('column-count-select');
         const shuffleGridBtn = document.getElementById('shuffle-grid-btn');
         const surpriseBtn = document.getElementById('surprise-btn'); 
-        const typeFilterBtn = document.getElementById('type-filter-btn'); 
+        const typeFilterBtn = document.getElementById('type-filter-btn'); // NEW ELEMENT
         const tagForm = document.getElementById('tag-form');
         const tagInput = document.getElementById('tag-input');
         const modalTagsDisplay = document.getElementById('modal-tags-display');
@@ -619,12 +594,10 @@
         const shuffleToggle = document.getElementById('shuffle-toggle');
         const starsContainer = document.getElementById('stars-container');
 
-        // NEW DOM ELEMENTS
+        // NEW EXPORT/IMPORT DOM ELEMENTS
         const exportDataBtn = document.getElementById('export-data-btn');
         const importDataBtn = document.getElementById('import-data-btn');
         const importFileInput = document.getElementById('import-file-input');
-        const previewOverlay = document.getElementById('preview-overlay');
-        const previewImg = document.getElementById('preview-img');
 
         // --- State ---
         let localImageFiles = []; 
@@ -634,13 +607,16 @@
         let isGlobalMute = true;
         let pendingFolderHandle = null; 
         
+        // Auto shuffle state
         let isAutoShuffleOn = false; 
+
+        // Media Type Filter State ('all', 'photo', 'video')
         let currentTypeFilter = 'all';
-        let peekTimer = null; // Timer for the peek feature
 
         // --- Mute Logic ---
         function updateMuteIcon() {
             if (isGlobalMute) {
+                // Muted Icon
                 muteIconSvg.innerHTML = `
                     <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
                     <line x1="23" y1="9" x2="17" y2="15"></line>
@@ -648,6 +624,7 @@
                 `;
                 globalMuteBtn.title = "Current: Muted (Click to Unmute)";
             } else {
+                // Unmuted (Sound On) Icon
                 muteIconSvg.innerHTML = `
                     <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
                     <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
@@ -809,6 +786,7 @@
 
         // --- NEW: Toggle Button Logic ---
         typeFilterBtn.onclick = () => {
+            // Cycle: all -> photo -> video -> all
             if (currentTypeFilter === 'all') {
                 currentTypeFilter = 'photo';
                 typeFilterBtn.textContent = '📷 Photos Only';
@@ -869,8 +847,8 @@
                 });
             }
 
-            // 3. Media Type Filter
-            // treat GIF as Video for filtering purposes
+            // 3. NEW: Media Type Filter
+            // Note: We treat GIF as Video for filtering purposes, as requested
             if (currentTypeFilter === 'photo') {
                 items = items.filter(item => !item.isVideo && !item.name.toLowerCase().endsWith('.gif'));
             } else if (currentTypeFilter === 'video') {
@@ -899,9 +877,6 @@
             imageGrid.style.display = 'grid';
 
             const pinnedImages = getFromStorage('pinnedImages') || [];
-
-            // OPTIMIZATION: Use a Fragment
-            const fragment = document.createDocumentFragment();
 
             itemsToRender.forEach(async (item, index) => {
                 let mediaUrl;
@@ -943,22 +918,6 @@
                 
                 mediaElement.onerror = () => { pinContainer.remove(); };
                 
-                // NEW: PEEK PREVIEW LOGIC
-                // Only if it is NOT a video (so "pic section" request)
-                if (!item.isVideo) {
-                     pinContainer.addEventListener('mouseenter', () => {
-                         // Clear any existing timer first
-                         if(peekTimer) clearTimeout(peekTimer);
-                         peekTimer = setTimeout(() => {
-                             openPeek(mediaUrl);
-                         }, 1000); // 1 second delay
-                     });
-                     
-                     pinContainer.addEventListener('mouseleave', () => {
-                         if(peekTimer) clearTimeout(peekTimer);
-                     });
-                }
-
                 const pinBtn = document.createElement('button');
                 pinBtn.classList.add('pin-btn');
                 pinBtn.title = "Pin item";
@@ -988,29 +947,11 @@
 
                 pinContainer.appendChild(pinBtn);
                 pinContainer.appendChild(deleteBtn);
-                
-                // Add to Grid directly (Async loop means fragment isn't perfect here but appendChild is fine)
                 imageGrid.appendChild(pinContainer);
                 pinContainer.addEventListener('click', () => openModal(index));
             });
         }
         
-        // --- PEEK FUNCTIONS ---
-        function openPeek(url) {
-            previewImg.src = url;
-            previewOverlay.classList.add('active');
-        }
-        
-        function closePeek() {
-            previewOverlay.classList.remove('active');
-            if(peekTimer) clearTimeout(peekTimer);
-            setTimeout(() => { previewImg.src = ''; }, 200);
-        }
-        
-        previewImg.addEventListener('mouseleave', closePeek);
-        previewOverlay.addEventListener('click', closePeek);
-
-
         // --- Modal & Sidebar Logic ---
         async function openModal(index) {
             if (index < 0 || index >= displayedItems.length) return;
@@ -1045,7 +986,7 @@
             loadComments(item.name);
             loadTagsForModal(item.name);
             loadAvailableTags(item.name);
-            setupRatingUI(item.name); 
+            setupRatingUI(item.name); // NEW: Load rating
         }
         function closeModal() {
             imageModal.style.display = 'none';
@@ -1055,7 +996,7 @@
             
             modalImg.src = '';
             modalVideo.src = '';
-            modalVideo.pause(); 
+            modalVideo.pause(); // Stop video
             document.body.style.overflow = 'auto';
         }
         function closeSidebar() {
@@ -1072,6 +1013,7 @@
             isAutoShuffleOn = e.target.checked;
         });
 
+        // Event: When modal video finishes playing
         modalVideo.addEventListener('ended', () => {
             if (displayedItems.length <= 1) return; 
 
@@ -1384,12 +1326,16 @@
 
         // --- Surprise Me Logic (UPDATED) ---
         surpriseBtn.addEventListener('click', () => {
+            // Pick from the currently filtered view (displayedItems)
+            // This naturally respects the Photo/Video toggle AND tag filters.
+            
             if (displayedItems.length === 0) {
                 alert("No items found! Please select a folder or clear filters.");
                 return;
             }
             
             let randomIndex;
+            // Try to pick a new item if possible
             if (displayedItems.length > 1 && currentImageIndex !== -1) {
                 do {
                     randomIndex = Math.floor(Math.random() * displayedItems.length);
@@ -1589,4 +1535,4 @@
     });
     </script>
 </body>
-</html>
+</html>	
