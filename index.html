@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Softpix</title>
-    <link rel="icon" href="favicon.ico" type="image/x-icon">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         /* CSS Variables for Theming */
@@ -97,7 +96,7 @@
         }
         .sidebar-overlay.visible { background-color: rgba(0,0,0,0.5); pointer-events: all; }
         .sidebar {
-            position: fixed; top: 0; right: 0; height: 100%; width: 280px;
+            position: fixed; top: 0; right: 0; height: 100%; width: 300px;
             background-color: var(--bg-secondary); box-shadow: -5px 0 15px rgba(0,0,0,0.1);
             z-index: 999; transform: translateX(100%); transition: transform 0.3s ease-in-out;
             padding: 1.5rem; box-sizing: border-box; display: flex; flex-direction: column; gap: 1rem;
@@ -345,6 +344,27 @@
             background-color: var(--bg-secondary); padding: 2rem; border-radius: 1rem;
             width: 100%; max-width: 400px; text-align: center;
         }
+
+        /* --- OPTIMIZED PEEK PREVIEW OVERLAY --- */
+        #preview-overlay {
+            position: fixed; inset: 0; z-index: 90;
+            /* Simple background, NO BLUR */
+            background: rgba(0, 0, 0, 0.85); 
+            display: none; justify-content: center; align-items: center;
+            opacity: 0; transition: opacity 0.2s ease;
+            pointer-events: none; /* Let events pass through initially */
+        }
+        #preview-overlay.active { display: flex; opacity: 1; pointer-events: auto; }
+        #preview-img {
+            max-width: 90vw; max-height: 90vh;
+            border-radius: 8px;
+            /* Simple shadow, no heavy effects */
+            box-shadow: 0 10px 40px rgba(0,0,0,0.8);
+            transform: scale(0.95); 
+            transition: transform 0.2s ease-out;
+            will-change: transform; /* Hint for GPU */
+        }
+        #preview-overlay.active #preview-img { transform: scale(1); }
         
         @media (max-width: 768px) {
             .modal-content { flex-direction: column; }
@@ -355,6 +375,10 @@
     </style>
 </head>
 <body>
+    <div id="preview-overlay">
+        <img id="preview-img">
+    </div>
+
     <div id="sidebar-overlay"></div>
     <div id="sidebar" class="sidebar">
         <div>
@@ -363,6 +387,22 @@
                 <button id="close-sidebar-btn" title="Close menu">&times;</button>
             </div>
             <div id="theme-options" style="margin-top: 0.5rem;"></div>
+        </div>
+        <hr style="border-color: var(--border-primary); width: 100%;">
+        <div>
+            <h4 class="text-main" style="margin-bottom: 0.5rem;">Data Management</h4>
+            <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                <button id="export-data-btn" class="btn-secondary" style="width: 100%; justify-content: center;">
+                   Export Data (JSON)
+                </button>
+                <button id="import-data-btn" class="btn-secondary" style="width: 100%; justify-content: center;">
+                   Import Data (JSON)
+                </button>
+                <input type="file" id="import-file-input" accept=".json" style="display: none;">
+                <p style="font-size: 0.75rem; color: var(--text-secondary); margin: 0;">
+                    Importing merges data with your local storage. It won't display files unless they are in the current folder.
+                </p>
+            </div>
         </div>
         <hr style="border-color: var(--border-primary); width: 100%;">
         <div>
@@ -407,11 +447,15 @@
                 </svg>
             </button>
 
-            <button id="surprise-btn" class="btn-surprise" title="Play a random video">
+            <button id="surprise-btn" class="btn-surprise" title="Open a random item">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                    <polygon points="5 3 19 12 5 21 5 3"></polygon>
                 </svg>
                 Surprise Me
+            </button>
+            
+            <button id="type-filter-btn" class="btn-secondary" style="min-width: 110px;">
+                All Media
             </button>
 
             <select id="column-count-select" class="sort-select" title="Items per row">
@@ -550,6 +594,7 @@
         const columnCountSelect = document.getElementById('column-count-select');
         const shuffleGridBtn = document.getElementById('shuffle-grid-btn');
         const surpriseBtn = document.getElementById('surprise-btn'); 
+        const typeFilterBtn = document.getElementById('type-filter-btn'); 
         const tagForm = document.getElementById('tag-form');
         const tagInput = document.getElementById('tag-input');
         const modalTagsDisplay = document.getElementById('modal-tags-display');
@@ -572,7 +617,14 @@
         const globalMuteBtn = document.getElementById('global-mute-btn');
         const muteIconSvg = document.getElementById('mute-icon-svg');
         const shuffleToggle = document.getElementById('shuffle-toggle');
-        const starsContainer = document.getElementById('stars-container'); // NEW ELEMENT
+        const starsContainer = document.getElementById('stars-container');
+
+        // NEW DOM ELEMENTS
+        const exportDataBtn = document.getElementById('export-data-btn');
+        const importDataBtn = document.getElementById('import-data-btn');
+        const importFileInput = document.getElementById('import-file-input');
+        const previewOverlay = document.getElementById('preview-overlay');
+        const previewImg = document.getElementById('preview-img');
 
         // --- State ---
         let localImageFiles = []; 
@@ -582,13 +634,13 @@
         let isGlobalMute = true;
         let pendingFolderHandle = null; 
         
-        // Auto shuffle state
         let isAutoShuffleOn = false; 
+        let currentTypeFilter = 'all';
+        let peekTimer = null; // Timer for the peek feature
 
         // --- Mute Logic ---
         function updateMuteIcon() {
             if (isGlobalMute) {
-                // Muted Icon
                 muteIconSvg.innerHTML = `
                     <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
                     <line x1="23" y1="9" x2="17" y2="15"></line>
@@ -596,7 +648,6 @@
                 `;
                 globalMuteBtn.title = "Current: Muted (Click to Unmute)";
             } else {
-                // Unmuted (Sound On) Icon
                 muteIconSvg.innerHTML = `
                     <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
                     <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
@@ -756,6 +807,21 @@
             renderDOM(displayedItems);
         }
 
+        // --- NEW: Toggle Button Logic ---
+        typeFilterBtn.onclick = () => {
+            if (currentTypeFilter === 'all') {
+                currentTypeFilter = 'photo';
+                typeFilterBtn.textContent = '📷 Photos Only';
+            } else if (currentTypeFilter === 'photo') {
+                currentTypeFilter = 'video';
+                typeFilterBtn.textContent = '🎥 Videos Only';
+            } else {
+                currentTypeFilter = 'all';
+                typeFilterBtn.textContent = 'All Media';
+            }
+            renderGrid();
+        };
+
         // --- Unified Grid Rendering ---
         async function renderGrid() {
             let items = [];
@@ -768,21 +834,19 @@
                 items.push({ type: 'external', name: name, url: url, lastModified: 0, isVideo: isVid });
             });
 
+            // 1. Sort
             const sortBy = sortSelect.value;
             const popularity = getFromStorage('imagePopularity') || {};
             const pinnedImages = getFromStorage('pinnedImages') || [];
             
-            // FILTERING LOGIC FOR STARS (NEW)
             if (sortBy.startsWith('rating-')) {
                 const targetRating = parseInt(sortBy.split('-')[1]);
                 const ratings = getFromStorage('imageRatings') || {};
-                // Filter items to keep ONLY those with the specific star rating
                 items = items.filter(item => {
                     const itemRating = ratings[item.name] || 0;
                     return itemRating === targetRating;
                 });
             } else {
-                // Normal Sort Logic
                 items.sort((a, b) => {
                     if (sortBy === 'pinned') {
                         const aIsPinned = pinnedImages.includes(a.name);
@@ -796,12 +860,21 @@
                 });
             }
             
+            // 2. Tag Filter
             if (activeFilterTags.length > 0) {
                 const allTags = getFromStorage('imageTags') || {};
                 items = items.filter(item => {
                     const itemTags = allTags[item.name] || [];
                     return activeFilterTags.some(filterTag => itemTags.includes(filterTag));
                 });
+            }
+
+            // 3. Media Type Filter
+            // treat GIF as Video for filtering purposes
+            if (currentTypeFilter === 'photo') {
+                items = items.filter(item => !item.isVideo && !item.name.toLowerCase().endsWith('.gif'));
+            } else if (currentTypeFilter === 'video') {
+                items = items.filter(item => item.isVideo || item.name.toLowerCase().endsWith('.gif'));
             }
 
             displayedItems = items;
@@ -812,10 +885,7 @@
             imageGrid.innerHTML = '';
             
             if (itemsToRender.length === 0) {
-                // If we have items but they are filtered out, show empty state.
-                // If we literally have no items loaded, show the relevant empty/resume state
                 if (localImageFiles.length === 0 && getFromStorage('externalImageUrls')?.length === 0) {
-                     // handled by init/permission logic
                      imageGrid.style.display = 'none';
                 } else {
                      emptyState.style.display = 'flex';
@@ -829,6 +899,9 @@
             imageGrid.style.display = 'grid';
 
             const pinnedImages = getFromStorage('pinnedImages') || [];
+
+            // OPTIMIZATION: Use a Fragment
+            const fragment = document.createDocumentFragment();
 
             itemsToRender.forEach(async (item, index) => {
                 let mediaUrl;
@@ -847,7 +920,6 @@
                     mediaElement.setAttribute('playsinline', '');
                     mediaElement.src = mediaUrl;
                     
-                    // Hover Play with Global Mute Logic
                     pinContainer.addEventListener('mouseenter', () => {
                         mediaElement.muted = isGlobalMute;
                         const playPromise = mediaElement.play();
@@ -871,6 +943,22 @@
                 
                 mediaElement.onerror = () => { pinContainer.remove(); };
                 
+                // NEW: PEEK PREVIEW LOGIC
+                // Only if it is NOT a video (so "pic section" request)
+                if (!item.isVideo) {
+                     pinContainer.addEventListener('mouseenter', () => {
+                         // Clear any existing timer first
+                         if(peekTimer) clearTimeout(peekTimer);
+                         peekTimer = setTimeout(() => {
+                             openPeek(mediaUrl);
+                         }, 1000); // 1 second delay
+                     });
+                     
+                     pinContainer.addEventListener('mouseleave', () => {
+                         if(peekTimer) clearTimeout(peekTimer);
+                     });
+                }
+
                 const pinBtn = document.createElement('button');
                 pinBtn.classList.add('pin-btn');
                 pinBtn.title = "Pin item";
@@ -900,11 +988,29 @@
 
                 pinContainer.appendChild(pinBtn);
                 pinContainer.appendChild(deleteBtn);
+                
+                // Add to Grid directly (Async loop means fragment isn't perfect here but appendChild is fine)
                 imageGrid.appendChild(pinContainer);
                 pinContainer.addEventListener('click', () => openModal(index));
             });
         }
         
+        // --- PEEK FUNCTIONS ---
+        function openPeek(url) {
+            previewImg.src = url;
+            previewOverlay.classList.add('active');
+        }
+        
+        function closePeek() {
+            previewOverlay.classList.remove('active');
+            if(peekTimer) clearTimeout(peekTimer);
+            setTimeout(() => { previewImg.src = ''; }, 200);
+        }
+        
+        previewImg.addEventListener('mouseleave', closePeek);
+        previewOverlay.addEventListener('click', closePeek);
+
+
         // --- Modal & Sidebar Logic ---
         async function openModal(index) {
             if (index < 0 || index >= displayedItems.length) return;
@@ -939,7 +1045,7 @@
             loadComments(item.name);
             loadTagsForModal(item.name);
             loadAvailableTags(item.name);
-            setupRatingUI(item.name); // NEW: Load rating
+            setupRatingUI(item.name); 
         }
         function closeModal() {
             imageModal.style.display = 'none';
@@ -949,7 +1055,7 @@
             
             modalImg.src = '';
             modalVideo.src = '';
-            modalVideo.pause(); // Stop video
+            modalVideo.pause(); 
             document.body.style.overflow = 'auto';
         }
         function closeSidebar() {
@@ -961,21 +1067,18 @@
         function showPrevImage() { openModal((currentImageIndex - 1 + displayedItems.length) % displayedItems.length); }
 
 
-        // --- NEW: Toggle Listener & Video End Logic ---
+        // --- Toggle Listener & Video End Logic ---
         shuffleToggle.addEventListener('change', (e) => {
             isAutoShuffleOn = e.target.checked;
         });
 
-        // Event: When modal video finishes playing
         modalVideo.addEventListener('ended', () => {
             if (displayedItems.length <= 1) return; 
 
-            // 1. Check if CURRENT video is PINNED
             const currentItem = displayedItems[currentImageIndex];
             const pinnedImages = getFromStorage('pinnedImages') || [];
             const isCurrentPinned = pinnedImages.includes(currentItem.name);
 
-            // 2. Logic decision
             if (isCurrentPinned) {
                 showNextImage(); 
             } else {
@@ -995,7 +1098,11 @@
         // --- Local Storage & User Logic ---
         function getFromStorage(key) {
             const item = localStorage.getItem(key);
-            return item ? JSON.parse(item) : null;
+            try {
+                return item ? JSON.parse(item) : null;
+            } catch (e) {
+                return null;
+            }
         }
         function saveToStorage(key, data) {
             localStorage.setItem(key, JSON.stringify(data));
@@ -1006,33 +1113,27 @@
             saveToStorage('imagePopularity', popularity);
         }
 
-        // --- NEW: RATING LOGIC ---
+        // --- RATING LOGIC ---
         function setupRatingUI(imageName) {
             starsContainer.innerHTML = '';
             const allRatings = getFromStorage('imageRatings') || {};
             const currentRating = allRatings[imageName] || 0;
 
-            // Create 5 stars
             for (let i = 1; i <= 5; i++) {
                 const star = document.createElement('div');
                 star.innerHTML = `<svg class="star-icon ${i <= currentRating ? 'filled' : ''}" viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>`;
                 
-                // Click to set rating
                 star.addEventListener('click', () => {
                     const ratings = getFromStorage('imageRatings') || {};
                     ratings[imageName] = i;
                     saveToStorage('imageRatings', ratings);
                     updateStarsVisual(i);
-                    // If filtering by rating, grid might need update next time, but simple here.
                 });
 
-                // Hover effects
                 star.addEventListener('mouseover', () => updateStarsVisual(i));
-                
                 starsContainer.appendChild(star);
             }
 
-            // Mouse leave container: reset to saved rating
             starsContainer.addEventListener('mouseleave', () => {
                 const savedRatings = getFromStorage('imageRatings') || {};
                 updateStarsVisual(savedRatings[imageName] || 0);
@@ -1268,7 +1369,7 @@
         }
         columnCountSelect.addEventListener('change', updateGridColumns);
 
-        // --- NEW: Resume Permission Handler ---
+        // --- Resume Permission Handler ---
         resumeBtn.addEventListener('click', async () => {
              if (pendingFolderHandle) {
                  const permission = await pendingFolderHandle.requestPermission({ mode: 'read' });
@@ -1281,25 +1382,120 @@
              }
         });
 
-        // --- NEW: Surprise Me Logic ---
+        // --- Surprise Me Logic (UPDATED) ---
         surpriseBtn.addEventListener('click', () => {
-            // Filter displayedItems to find videos only
-            const videoIndices = displayedItems
-                .map((item, index) => item.isVideo ? index : -1)
-                .filter(index => index !== -1);
-
-            if (videoIndices.length === 0) {
-                alert("No videos found to surprise you with! Please add some videos or clear filters.");
+            if (displayedItems.length === 0) {
+                alert("No items found! Please select a folder or clear filters.");
                 return;
             }
-
-            // Totally random each time
-            const randomIndex = Math.floor(Math.random() * videoIndices.length);
-            const targetIndex = videoIndices[randomIndex];
             
-            // Open the modal
-            openModal(targetIndex);
+            let randomIndex;
+            if (displayedItems.length > 1 && currentImageIndex !== -1) {
+                do {
+                    randomIndex = Math.floor(Math.random() * displayedItems.length);
+                } while (randomIndex === currentImageIndex);
+            } else {
+                randomIndex = Math.floor(Math.random() * displayedItems.length);
+            }
+            
+            openModal(randomIndex);
         });
+
+        // --- EXPORT & IMPORT LOGIC (FIXED) ---
+
+        exportDataBtn.onclick = function() {
+            try {
+                const dataToExport = {
+                    meta: {
+                        version: "1.0",
+                        timestamp: new Date().toISOString()
+                    },
+                    user: {
+                        name: getFromStorage('softpixUserName'),
+                        avatar: getFromStorage('softpixUserAvatar'),
+                        theme: getFromStorage('softpixAccentColor'),
+                        columns: getFromStorage('softpixGridColumns')
+                    },
+                    data: {
+                        pinned: getFromStorage('pinnedImages'),
+                        popularity: getFromStorage('imagePopularity'),
+                        ratings: getFromStorage('imageRatings'),
+                        comments: getFromStorage('imageComments'),
+                        tags: getFromStorage('imageTags'),
+                        externalUrls: getFromStorage('externalImageUrls')
+                    }
+                };
+
+                const jsonStr = JSON.stringify(dataToExport, null, 2);
+                const blob = new Blob([jsonStr], {type: "application/json"});
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = url;
+                a.download = "softpix_backup_" + Date.now() + ".json";
+                document.body.appendChild(a);
+                a.click();
+                
+                window.setTimeout(() => {
+                    document.body.removeChild(a);
+                    window.URL.revokeObjectURL(url);
+                }, 100);
+
+            } catch (e) {
+                console.error(e);
+                alert("Export failed. Check console for details: " + e.message);
+            }
+        };
+
+        importDataBtn.addEventListener('click', () => {
+            importFileInput.click();
+        });
+
+        importFileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                try {
+                    const imported = JSON.parse(event.target.result);
+                    
+                    if(imported.user) {
+                        if(imported.user.name) saveToStorage('softpixUserName', imported.user.name);
+                        if(imported.user.avatar) saveToStorage('softpixUserAvatar', imported.user.avatar);
+                        if(imported.user.theme) {
+                            applyAccentColor(imported.user.theme);
+                            populateThemeSidebar();
+                        }
+                        if(imported.user.columns) {
+                            columnCountSelect.value = imported.user.columns;
+                            updateGridColumns();
+                        }
+                    }
+
+                    if(imported.data) {
+                        if(imported.data.pinned) saveToStorage('pinnedImages', imported.data.pinned);
+                        if(imported.data.popularity) saveToStorage('imagePopularity', imported.data.popularity);
+                        if(imported.data.ratings) saveToStorage('imageRatings', imported.data.ratings);
+                        if(imported.data.comments) saveToStorage('imageComments', imported.data.comments);
+                        if(imported.data.tags) saveToStorage('imageTags', imported.data.tags);
+                        if(imported.data.externalUrls) saveToStorage('externalImageUrls', imported.data.externalUrls);
+                    }
+
+                    alert("Data imported successfully!");
+                    renderGrid();
+                    updateTagBar();
+                    closeSidebar();
+
+                } catch (err) {
+                    console.error("Import Error", err);
+                    alert("Error parsing JSON file. Please ensure it is a valid Softpix export.");
+                }
+            };
+            reader.readAsText(file);
+            e.target.value = '';
+        });
+
 
         // --- Event Listeners ---
         selectFolderBtn.addEventListener('click', getFolder);
@@ -1368,24 +1564,17 @@
             columnCountSelect.value = savedCols;
             updateGridColumns();
 
-            // Load Saved URLs first (they don't need permissions)
             const savedUrls = getFromStorage('externalImageUrls') || [];
             if(savedUrls.length > 0) await renderGrid();
 
-            // Check IndexedDB for Folder Handle
             const folderHandle = await getSavedFolderHandle();
             if (folderHandle) {
-                // Check permissions
                 const permission = await folderHandle.queryPermission({ mode: 'read' });
                 
                 if (permission === 'granted') {
-                    // Browser still has permission (rare after restart, common on refresh)
                     await loadLocalImages(folderHandle);
                     await renderGrid();
                 } else if (permission === 'prompt') {
-                    // Handle exists, but user must re-approve.
-                    // We cannot call requestPermission() here automatically (browser blocks it).
-                    // We must show a button.
                     pendingFolderHandle = folderHandle;
                     emptyState.style.display = 'none';
                     imageGrid.style.display = 'none';
