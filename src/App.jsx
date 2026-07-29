@@ -25,6 +25,7 @@ function App() {
     const [imageRatings, setImageRatings] = useLocalStorage('imageRatings', {});
     const [imageComments, setImageComments] = useLocalStorage('imageComments', {});
     const [imageTags, setImageTags] = useLocalStorage('imageTags', {});
+    const [removedTags, setRemovedTags] = useLocalStorage('removedTags', {});
 
     const { localFiles, selectFolder, isPrompting, pendingHandle, resumeSession } = useFileSystem();
 
@@ -71,7 +72,11 @@ function App() {
                 if (file.folderTags && file.folderTags.length > 0) {
                     const currentFileTags = newTags[file.name] || [];
                     const mergedTags = new Set(currentFileTags);
-                    file.folderTags.forEach(t => mergedTags.add(t));
+                    file.folderTags.forEach(t => {
+                        if (!removedTags[file.name]?.includes(t)) {
+                            mergedTags.add(t);
+                        }
+                    });
                     if (mergedTags.size !== currentFileTags.length) {
                         newTags[file.name] = Array.from(mergedTags);
                         tagsChanged = true;
@@ -80,7 +85,7 @@ function App() {
             });
             return tagsChanged ? newTags : prevTags;
         });
-    }, [localFiles, setImageTags]);
+    }, [localFiles, setImageTags, removedTags]);
 
     // --- Data processing (Combine, filter, sort) ---
     const baseItems = useMemo(() => {
@@ -256,8 +261,22 @@ function App() {
         const current = imageTags[name] || [];
         if (current.includes(tag)) {
             setImageTags({...imageTags, [name]: current.filter(t => t !== tag)});
+            setRemovedTags(prev => {
+                const currentRemoved = prev[name] || [];
+                if (!currentRemoved.includes(tag)) {
+                    return {...prev, [name]: [...currentRemoved, tag]};
+                }
+                return prev;
+            });
         } else {
             setImageTags({...imageTags, [name]: [...current, tag]});
+            setRemovedTags(prev => {
+                const currentRemoved = prev[name] || [];
+                if (currentRemoved.includes(tag)) {
+                    return {...prev, [name]: currentRemoved.filter(t => t !== tag)};
+                }
+                return prev;
+            });
         }
     };
 

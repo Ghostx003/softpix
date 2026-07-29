@@ -9,7 +9,7 @@ const ExportModal = ({
     allCategories 
 }) => {
     const [exportType, setExportType] = useState('Ratings');
-    const [exportFormat] = useState('txt');
+    const [exportFormat, setExportFormat] = useState('txt');
     const [selectedOptions, setSelectedOptions] = useState([]);
     const [errorMessage, setErrorMessage] = useState('');
     const [isExporting, setIsExporting] = useState(false);
@@ -42,7 +42,7 @@ const ExportModal = ({
     };
 
     const handleExport = async () => {
-        if (selectedOptions.length === 0) {
+        if (exportFormat !== 'json' && selectedOptions.length === 0) {
             setErrorMessage('Please select at least one option to export.');
             return;
         }
@@ -52,6 +52,7 @@ const ExportModal = ({
 
         const result = await ExportController.handleExport({
             type: exportType,
+            format: exportFormat,
             selections: selectedOptions,
             items: displayedItems,
             tagsMap: imageTags,
@@ -74,7 +75,7 @@ const ExportModal = ({
                 <h2 style={{ marginTop: 0, marginBottom: '20px', borderBottom: '1px solid var(--border-primary)', paddingBottom: '15px' }}>Export Center</h2>
                 
                 <div style={{ display: 'flex', gap: '40px', marginBottom: '25px' }}>
-                    <div style={{ flex: 1 }}>
+                    <div style={{ flex: 1, opacity: exportFormat === 'json' ? 0.5 : 1, pointerEvents: exportFormat === 'json' ? 'none' : 'auto' }}>
                         <h4 style={{ margin: '0 0 10px 0', color: 'var(--text-subtle)' }}>Choose Export Type</h4>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                             <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
@@ -91,15 +92,19 @@ const ExportModal = ({
                     <div style={{ flex: 1 }}>
                         <h4 style={{ margin: '0 0 10px 0', color: 'var(--text-subtle)' }}>Export Format</h4>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                            <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', opacity: 0.8 }}>
-                                <input type="radio" checked readOnly />
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
+                                <input type="radio" checked={exportFormat === 'txt'} onChange={() => setExportFormat('txt')} />
                                 File Names (.txt)
+                            </label>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
+                                <input type="radio" checked={exportFormat === 'json'} onChange={() => { setExportFormat('json'); setErrorMessage(''); }} />
+                                JSON Sync Plan (.json)
                             </label>
                         </div>
                     </div>
                 </div>
 
-                <div style={{ flex: 1, overflowY: 'auto', background: 'var(--bg-primary)', padding: '15px', borderRadius: '8px', border: '1px solid var(--border-primary)', marginBottom: '20px' }}>
+                <div style={{ flex: 1, overflowY: 'auto', background: 'var(--bg-primary)', padding: '15px', borderRadius: '8px', border: '1px solid var(--border-primary)', marginBottom: '20px', opacity: exportFormat === 'json' ? 0.5 : 1, pointerEvents: exportFormat === 'json' ? 'none' : 'auto' }}>
                     <h4 style={{ margin: '0 0 15px 0', color: 'var(--text-main)' }}>
                         Select {exportType} to Export:
                     </h4>

@@ -1,6 +1,7 @@
 import { FileWriter } from './FileWriter';
 import { CategoryExporter } from './CategoryExporter';
 import { RatingExporter } from './RatingExporter';
+import { JSONExporter } from './JSONExporter';
 
 export class ExportService {
     static async exportCategories(items, tagsMap, selectedCategories, allAvailableCategories) {
@@ -13,7 +14,7 @@ export class ExportService {
             throw new Error("No media found for the selected categories.");
         }
         
-        return await FileWriter.downloadTextFile('Categories Export.txt', content);
+        return await FileWriter.downloadTextFile('Categories Export.json', content);
     }
     
     static async exportRatings(items, ratingsMap, selectedRatings) {
@@ -27,5 +28,14 @@ export class ExportService {
         }
         
         return await FileWriter.downloadTextFile('Ratings Export.txt', content);
+    }
+    
+    static async exportSynchronizationPlan(items, tagsMap) {
+        const content = JSONExporter.generateJSON(items, tagsMap);
+        if (!content) {
+            throw new Error("Failed to generate synchronization plan.");
+        }
+        
+        return await FileWriter.downloadTextFile('SoftPix_Sync_Plan.json', content);
     }
 }

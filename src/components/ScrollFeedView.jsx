@@ -103,6 +103,39 @@ const ScrollFeedView = ({
         return [];
     }, [mode, selectedCategory, displayedItems, imageTags, isShuffleModeActive, shuffledPlaylist]);
 
+    useEffect(() => {
+        if (feedItems.length > 0 && activeIndex >= feedItems.length) {
+            setActiveIndex(Math.max(0, feedItems.length - 1));
+        }
+    }, [feedItems.length, activeIndex]);
+
+    const handleToggleTag = (name, tag) => {
+        const currentTags = imageTags[name] || [];
+        
+        if (currentTags.includes(tag)) {
+            let wouldRemoveFromView = false;
+            
+            if (isShuffleModeActive) {
+                if (currentShuffleMode === 'category' && selectedCategory === tag) {
+                    wouldRemoveFromView = true;
+                } else if (currentShuffleMode === 'all' && selectedShuffleCategories.length > 0) {
+                    const remainingTags = currentTags.filter(t => t !== tag);
+                    wouldRemoveFromView = !selectedShuffleCategories.some(c => remainingTags.includes(c));
+                }
+            } else if (mode === 'category' && selectedCategory === tag) {
+                wouldRemoveFromView = true;
+            }
+
+            if (wouldRemoveFromView) {
+                if (isShuffleModeActive) {
+                    setShuffledPlaylist(prev => prev.filter(item => item.name !== name));
+                }
+            }
+        }
+        
+        toggleTagForItem(name, tag);
+    };
+
     const getCategoryCount = (category) => {
         if (category === 'Uncategorized') {
             return displayedItems.filter(item => !imageTags[item.name] || imageTags[item.name].length === 0).length;
@@ -397,7 +430,7 @@ const ScrollFeedView = ({
                         resumeTimes={resumeTimes}
                         setResumeTime={setResumeTime}
                         tags={imageTags}
-                        toggleTag={toggleTagForItem}
+                        toggleTag={handleToggleTag}
                         availableTags={uniqueTags}
                         comments={imageComments}
                         addComment={addCommentForItem}

@@ -1,6 +1,6 @@
 export class CategoryExporter {
     static generateText(items, tagsMap, selectedCategories, allAvailableCategories) {
-        let text = '';
+        const output = {};
         
         let categoriesToProcess = [];
         if (selectedCategories.includes('All Categories')) {
@@ -18,14 +18,19 @@ export class CategoryExporter {
             });
             
             if (matchingItems.length > 0) {
-                text += `${category}\r\n\r\n`;
-                matchingItems.forEach(item => {
-                    text += `${item.name}\r\n`;
+                output[category] = matchingItems.map(item => {
+                    let itemTags = tagsMap[item.name] || [];
+                    if (itemTags.length === 0) itemTags = ['Uncategorized'];
+                    
+                    return {
+                        name: item.name,
+                        path: item.id || 'Unknown',
+                        tags: itemTags
+                    };
                 });
-                text += `\r\n\r\n`;
             }
         });
         
-        return text.trim();
+        return Object.keys(output).length > 0 ? JSON.stringify(output, null, 2) : '';
     }
 }

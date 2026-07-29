@@ -31,7 +31,10 @@ const TransitionManager = ({
     useEffect(() => {
         activeItemRef.current = activeItem;
         
-        if (!activeItem) return;
+        if (!activeItem) {
+            setCurrentItem(null);
+            return;
+        }
 
         const performTransition = async () => {
             // 1. Fade out current viewer
@@ -96,6 +99,7 @@ const TransitionManager = ({
     return (
         <div style={{ flex: 1, opacity: opacity, transition: 'opacity 0.3s ease-in-out', background: '#000', display: 'flex', minHeight: 0, minWidth: 0 }}>
             <ViewerComponent 
+                key={currentItem.name}
                 item={currentItem}
                 mediaUrl={currentMediaUrl}
                 isGlobalMute={isGlobalMute}
