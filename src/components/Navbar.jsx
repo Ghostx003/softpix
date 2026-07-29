@@ -4,7 +4,7 @@ const Navbar = ({
     isGlobalMute, toggleGlobalMute, onGlobalShuffle, surpriseMe,
     currentTypeFilter, setTypeFilter, columnCount, setColumnCount,
     sortBy, setSortBy, selectFolder, toggleSidebar,
-    currentView, setCurrentView
+    currentView, setCurrentView, openExportModal
 }) => {
 
     const cycleTypeFilter = () => {
@@ -96,6 +96,7 @@ const Navbar = ({
                     <option value="rating-2">2 Stars Only</option>
                     <option value="rating-1">1 Star Only</option>
                 </select>
+                <button className="btn-secondary" onClick={openExportModal} title="Export Media Lists">Export</button>
                 <button className="btn-primary" onClick={selectFolder}>Select Folder</button>
                 <button className="hamburger-menu" onClick={toggleSidebar}>
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">

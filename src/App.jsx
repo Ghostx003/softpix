@@ -6,6 +6,8 @@ import ImageGrid from './components/ImageGrid';
 import ScrollFeedView from './components/ScrollFeedView';
 import ImageModal from './components/ImageModal';
 import NameModal from './components/NameModal';
+import ExportModal from './components/ExportModal';
+import TransitionManager from './components/TransitionManager';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { useFileSystem } from './hooks/useFileSystem';
 import './index.css';
@@ -34,7 +36,9 @@ function App() {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     
     const [currentView, setCurrentView] = useState('grid');
+    const [isLoading, setIsLoading] = useState(false);
     const [modalIndex, setModalIndex] = useState(-1);
+    const [isExportModalOpen, setIsExportModalOpen] = useState(false);
     const [isAutoShuffleOn, setAutoShuffleOn] = useState(false);
     const [resumeTimes, setResumeTimes] = useState({});
     const [customCategories, setCustomCategories] = useState([]);
@@ -315,6 +319,7 @@ function App() {
                 sortBy={sortBy} setSortBy={setSortBy}
                 selectFolder={selectFolder} toggleSidebar={() => setIsSidebarOpen(true)}
                 currentView={currentView} setCurrentView={setCurrentView}
+                openExportModal={() => setIsExportModalOpen(true)}
             />
             {currentView === 'grid' && (
                 <TagBar 
@@ -376,6 +381,16 @@ function App() {
                 isAutoShuffleOn={isAutoShuffleOn} setAutoShuffleOn={setAutoShuffleOn}
             />
             <NameModal isOpen={!userName} setUserName={setUserName} />
+
+            {isExportModalOpen && (
+                <ExportModal 
+                    closeModal={() => setIsExportModalOpen(false)}
+                    displayedItems={displayedItems}
+                    imageTags={imageTags}
+                    imageRatings={imageRatings}
+                    allCategories={uniqueTags}
+                />
+            )}
         </div>
     );
 }
