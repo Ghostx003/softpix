@@ -9,7 +9,12 @@ const TransitionManager = ({
     resumeTimes,
     setResumeTime,
     tags,
+    secondaryTags = {},
+    bookmarks = {},
+    addBookmark,
+    deleteBookmark,
     toggleTag,
+    toggleSecondaryTag,
     availableTags,
     comments,
     addComment,
@@ -46,7 +51,7 @@ const TransitionManager = ({
             // If activeItem changed during fade out, abort this transition
             if (activeItemRef.current !== activeItem) return;
             
-            // 2. Unmount old viewer (by setting it to null briefly, optional but ensures complete destruction)
+            // 2. Unmount old viewer
             setCurrentItem(null);
             if (currentMediaUrl && currentItem?.type === 'local') {
                 URL.revokeObjectURL(currentMediaUrl);
@@ -68,7 +73,6 @@ const TransitionManager = ({
             setCurrentItem(activeItem);
             
             // 6. Fade in
-            // Small delay to allow the DOM to mount before fading in
             setTimeout(() => {
                 if (activeItemRef.current === activeItem) {
                     setOpacity(1);
@@ -78,7 +82,7 @@ const TransitionManager = ({
         
         performTransition();
         
-    }, [activeItem]); // Deliberately only depend on activeItem to avoid re-running on other prop changes
+    }, [activeItem]);
 
     // Cleanup object URLs on unmount
     useEffect(() => {
@@ -90,7 +94,6 @@ const TransitionManager = ({
     }, [currentMediaUrl, currentItem]);
 
     if (!currentItem) {
-        // Loading state between viewers
         return <div style={{ flex: 1, background: '#000' }}></div>;
     }
 
@@ -106,7 +109,12 @@ const TransitionManager = ({
                 resumeTime={resumeTimes[currentItem.name] || 0}
                 setResumeTime={setResumeTime}
                 tags={tags[currentItem.name] || []}
+                secondaryTags={secondaryTags[currentItem.name] || []}
+                bookmarks={bookmarks[currentItem.name] || []}
+                addBookmark={(time, name) => addBookmark ? addBookmark(currentItem.name, time, name) : null}
+                deleteBookmark={(id) => deleteBookmark ? deleteBookmark(currentItem.name, id) : null}
                 toggleTag={toggleTag}
+                toggleSecondaryTag={toggleSecondaryTag}
                 availableTags={availableTags}
                 comments={comments[currentItem.name] || []}
                 addComment={addComment}

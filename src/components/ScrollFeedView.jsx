@@ -12,9 +12,9 @@ const shuffleArray = (array) => {
 };
 
 const ScrollFeedView = ({ 
-    displayedItems, uniqueTags, allCategories, customCategories, setCustomCategories, imageTags, setImageTags, isGlobalMute, resumeTimes, setResumeTime,
+    displayedItems, uniqueTags, allCategories, customCategories, setCustomCategories, imageTags, setImageTags, imageSecondaryTags = {}, setImageSecondaryTags, imageBookmarks = {}, addBookmarkForItem, deleteBookmarkForItem, isGlobalMute, resumeTimes, setResumeTime,
     imageComments, addCommentForItem, deleteCommentForItem, userName, userAvatar,
-    imageRatings, setRatingForItem, trackPopularity, toggleTagForItem,
+    imageRatings, setRatingForItem, trackPopularity, toggleTagForItem, toggleSecondaryTagForItem,
     shuffleMenuOpen, setShuffleMenuOpen
 }) => {
     const [mode, setMode] = useState('category');
@@ -55,15 +55,18 @@ const ScrollFeedView = ({
         let pool = [];
         if (shuffleMode === 'category') {
             pool = displayedItems.filter(item => {
-                if (selectedCategory === 'Uncategorized') return !imageTags[item.name] || imageTags[item.name].length === 0;
-                return (imageTags[item.name] || []).includes(selectedCategory);
+                const pTags = imageTags[item.name] || [];
+                const sTags = imageSecondaryTags[item.name] || [];
+                if (selectedCategory === 'Uncategorized') return pTags.length === 0 && sTags.length === 0;
+                return pTags.includes(selectedCategory) || sTags.includes(selectedCategory);
             });
             showToast(`🎲 Shuffle Mode Enabled\nPlaying videos from: ${selectedCategory}`);
         } else {
             if (selectedShuffleCategories.length > 0) {
                 pool = displayedItems.filter(item => {
-                    const tags = imageTags[item.name] || [];
-                    return selectedShuffleCategories.some(cat => tags.includes(cat));
+                    const pTags = imageTags[item.name] || [];
+                    const sTags = imageSecondaryTags[item.name] || [];
+                    return selectedShuffleCategories.some(cat => pTags.includes(cat) || sTags.includes(cat));
                 });
                 showToast(`🎲 Shuffle Mode Enabled\nPlaying videos from: ${selectedShuffleCategories.join(', ')}`);
             } else {
@@ -93,15 +96,20 @@ const ScrollFeedView = ({
             return [...displayedItems].sort(() => 0.5 - Math.random());
         } else if (mode === 'category') {
             if (selectedCategory === 'Uncategorized') {
-                return displayedItems.filter(item => !imageTags[item.name] || imageTags[item.name].length === 0);
+                return displayedItems.filter(item => {
+                    const pTags = imageTags[item.name] || [];
+                    const sTags = imageSecondaryTags[item.name] || [];
+                    return pTags.length === 0 && sTags.length === 0;
+                });
             }
             return displayedItems.filter(item => {
-                const tags = imageTags[item.name] || [];
-                return tags.includes(selectedCategory);
+                const pTags = imageTags[item.name] || [];
+                const sTags = imageSecondaryTags[item.name] || [];
+                return pTags.includes(selectedCategory) || sTags.includes(selectedCategory);
             });
         }
         return [];
-    }, [mode, selectedCategory, displayedItems, imageTags, isShuffleModeActive, shuffledPlaylist]);
+    }, [mode, selectedCategory, displayedItems, imageTags, imageSecondaryTags, isShuffleModeActive, shuffledPlaylist]);
 
     useEffect(() => {
         if (feedItems.length > 0 && activeIndex >= feedItems.length) {
@@ -111,19 +119,20 @@ const ScrollFeedView = ({
 
     const handleToggleTag = (name, tag) => {
         const currentTags = imageTags[name] || [];
+        const currentSecTags = imageSecondaryTags[name] || [];
         
         if (currentTags.includes(tag)) {
             let wouldRemoveFromView = false;
             
             if (isShuffleModeActive) {
                 if (currentShuffleMode === 'category' && selectedCategory === tag) {
-                    wouldRemoveFromView = true;
+                    if (!currentSecTags.includes(tag)) wouldRemoveFromView = true;
                 } else if (currentShuffleMode === 'all' && selectedShuffleCategories.length > 0) {
                     const remainingTags = currentTags.filter(t => t !== tag);
-                    wouldRemoveFromView = !selectedShuffleCategories.some(c => remainingTags.includes(c));
+                    wouldRemoveFromView = !selectedShuffleCategories.some(c => remainingTags.includes(c) || currentSecTags.includes(c));
                 }
             } else if (mode === 'category' && selectedCategory === tag) {
-                wouldRemoveFromView = true;
+                if (!currentSecTags.includes(tag)) wouldRemoveFromView = true;
             }
 
             if (wouldRemoveFromView) {
@@ -136,11 +145,49 @@ const ScrollFeedView = ({
         toggleTagForItem(name, tag);
     };
 
+    const handleToggleSecondaryTag = (name, tag) => {
+        const currentTags = imageTags[name] || [];
+        const currentSecTags = imageSecondaryTags[name] || [];
+        
+        if (currentSecTags.includes(tag)) {
+            let wouldRemoveFromView = false;
+            
+            if (isShuffleModeActive) {
+                if (currentShuffleMode === 'category' && selectedCategory === tag) {
+                    if (!currentTags.includes(tag)) wouldRemoveFromView = true;
+                } else if (currentShuffleMode === 'all' && selectedShuffleCategories.length > 0) {
+                    const remainingSecTags = currentSecTags.filter(t => t !== tag);
+                    wouldRemoveFromView = !selectedShuffleCategories.some(c => currentTags.includes(c) || remainingSecTags.includes(c));
+                }
+            } else if (mode === 'category' && selectedCategory === tag) {
+                if (!currentTags.includes(tag)) wouldRemoveFromView = true;
+            }
+
+            if (wouldRemoveFromView) {
+                if (isShuffleModeActive) {
+                    setShuffledPlaylist(prev => prev.filter(item => item.name !== name));
+                }
+            }
+        }
+        
+        if (toggleSecondaryTagForItem) {
+            toggleSecondaryTagForItem(name, tag);
+        }
+    };
+
     const getCategoryCount = (category) => {
         if (category === 'Uncategorized') {
-            return displayedItems.filter(item => !imageTags[item.name] || imageTags[item.name].length === 0).length;
+            return displayedItems.filter(item => {
+                const pTags = imageTags[item.name] || [];
+                const sTags = imageSecondaryTags[item.name] || [];
+                return pTags.length === 0 && sTags.length === 0;
+            }).length;
         }
-        return displayedItems.filter(item => (imageTags[item.name] || []).includes(category)).length;
+        return displayedItems.filter(item => {
+            const pTags = imageTags[item.name] || [];
+            const sTags = imageSecondaryTags[item.name] || [];
+            return pTags.includes(category) || sTags.includes(category);
+        }).length;
     };
 
     const sortedCategories = useMemo(() => {
@@ -159,7 +206,7 @@ const ScrollFeedView = ({
             
             return a.localeCompare(b);
         });
-    }, [allCategories, displayedItems, imageTags]);
+    }, [allCategories, displayedItems, imageTags, imageSecondaryTags]);
 
     // Wheel and Keyboard Event Interception for Media Navigation
     useEffect(() => {
@@ -217,21 +264,50 @@ const ScrollFeedView = ({
             // Ignore if user is typing in an input field
             if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
 
-            if (e.key === 'ArrowDown') {
+            if (e.key === 'PageDown') {
+                e.preventDefault();
+                if (sortedCategories && sortedCategories.length > 0) {
+                    const currIndex = sortedCategories.indexOf(selectedCategory);
+                    const nextIndex = (currIndex + 1) % sortedCategories.length;
+                    const nextCat = sortedCategories[nextIndex];
+                    setSelectedCategory(nextCat);
+                    setActiveIndex(0);
+                    showToast(`Now playing videos from category: ${nextCat}`);
+                }
+            } else if (e.key === 'PageUp') {
+                e.preventDefault();
+                if (sortedCategories && sortedCategories.length > 0) {
+                    const currIndex = sortedCategories.indexOf(selectedCategory);
+                    const prevIndex = (currIndex - 1 + sortedCategories.length) % sortedCategories.length;
+                    const prevCat = sortedCategories[prevIndex];
+                    setSelectedCategory(prevCat);
+                    setActiveIndex(0);
+                    showToast(`Now playing videos from category: ${prevCat}`);
+                }
+            } else if (e.key === 'ArrowDown') {
                 e.preventDefault();
                 advanceFeed(1);
             } else if (e.key === 'ArrowUp') {
                 e.preventDefault();
                 advanceFeed(-1);
+            } else if (e.key === '/') {
+                e.preventDefault();
+                if (document.body.classList.contains('theater-mode')) {
+                    document.body.classList.toggle('theater-sidebar-open');
+                    const app = document.querySelector('.app-container');
+                    if (app) app.classList.toggle('theater-sidebar-open');
+                } else {
+                    setIsSidebarCollapsed(prev => !prev);
+                }
             }
         };
 
-        window.addEventListener('wheel', handleWheel, { passive: false });
-        window.addEventListener('keydown', handleKeyDown);
+        window.addEventListener('wheel', handleWheel, { capture: true, passive: false });
+        window.addEventListener('keydown', handleKeyDown, { capture: true });
 
         return () => {
-            window.removeEventListener('wheel', handleWheel);
-            window.removeEventListener('keydown', handleKeyDown);
+            window.removeEventListener('wheel', handleWheel, { capture: true });
+            window.removeEventListener('keydown', handleKeyDown, { capture: true });
         };
     }, [feedItems.length, isShuffleModeActive, activeIndex, mode, selectedCategory, sortedCategories, displayedItems, imageTags, selectedShuffleCategories]);
 
@@ -306,18 +382,39 @@ const ScrollFeedView = ({
                 </div>
             )}
 
-            {mode === 'category' && (
-                isSidebarCollapsed ? (
-                    <div className="category-sidebar-collapsed" style={{ width: '60px', background: 'var(--bg-color)', borderRight: '1px solid rgba(255,255,255,0.1)', display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: '20px' }}>
-                        <button onClick={() => setIsSidebarCollapsed(false)} style={{ background: 'transparent', border: 'none', color: 'var(--text-main)', cursor: 'pointer', padding: '10px' }} title="Expand Categories">
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
-                        </button>
-                    </div>
-                ) : (
-                    <div className="category-sidebar" style={{ width: '300px', minWidth: '300px', background: 'var(--bg-color)', borderRight: '1px solid rgba(255,255,255,0.1)', overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+            {(mode === 'category' || true) && (
+                <>
+                    {isSidebarCollapsed && (
+                        <div className="category-sidebar-collapsed" style={{ width: '60px', background: 'var(--bg-color)', borderRight: '1px solid rgba(255,255,255,0.1)', display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: '20px' }}>
+                            <button 
+                                onClick={() => {
+                                    setIsSidebarCollapsed(false);
+                                    if (document.body.classList.contains('theater-mode')) {
+                                        document.body.classList.add('theater-sidebar-open');
+                                        const app = document.querySelector('.app-container');
+                                        if (app) app.classList.add('theater-sidebar-open');
+                                    }
+                                }} 
+                                style={{ background: 'transparent', border: 'none', color: 'var(--text-main)', cursor: 'pointer', padding: '10px' }} 
+                                title="Expand Categories"
+                            >
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+                            </button>
+                        </div>
+                    )}
+                    <div className="category-sidebar" style={{ width: isSidebarCollapsed ? '0px' : '300px', minWidth: isSidebarCollapsed ? '0px' : '300px', display: (mode === 'category' && !isSidebarCollapsed) ? 'flex' : 'none', background: 'var(--bg-color)', borderRight: '1px solid rgba(255,255,255,0.1)', overflowY: 'auto', flexDirection: 'column' }}>
                         <h3 style={{ padding: '20px', margin: 0, position: 'sticky', top: 0, background: '#000', zIndex: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             Categories
-                            <button onClick={() => setIsSidebarCollapsed(true)} style={{ background: 'transparent', border: 'none', color: 'var(--text-main)', cursor: 'pointer' }} title="Collapse Sidebar">
+                            <button 
+                                onClick={() => {
+                                    setIsSidebarCollapsed(true);
+                                    document.body.classList.remove('theater-sidebar-open');
+                                    const app = document.querySelector('.app-container');
+                                    if (app) app.classList.remove('theater-sidebar-open');
+                                }} 
+                                style={{ background: 'transparent', border: 'none', color: 'var(--text-main)', cursor: 'pointer', padding: '5px' }} 
+                                title="Collapse Sidebar"
+                            >
                                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"></polyline></svg>
                             </button>
                         </h3>
@@ -415,7 +512,7 @@ const ScrollFeedView = ({
                             )}
                         </div>
                     </div>
-                )
+                </>
             )}
             
             <div className="viewer-orchestrator" style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#000', minHeight: 0, minWidth: 0 }}>
@@ -430,7 +527,12 @@ const ScrollFeedView = ({
                         resumeTimes={resumeTimes}
                         setResumeTime={setResumeTime}
                         tags={imageTags}
+                        secondaryTags={imageSecondaryTags}
+                        bookmarks={imageBookmarks}
+                        addBookmark={addBookmarkForItem}
+                        deleteBookmark={deleteBookmarkForItem}
                         toggleTag={handleToggleTag}
+                        toggleSecondaryTag={handleToggleSecondaryTag}
                         availableTags={uniqueTags}
                         comments={imageComments}
                         addComment={addCommentForItem}

@@ -7,7 +7,6 @@ import ScrollFeedView from './components/ScrollFeedView';
 import ImageModal from './components/ImageModal';
 import NameModal from './components/NameModal';
 import ExportModal from './components/ExportModal';
-import TransitionManager from './components/TransitionManager';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { useFileSystem } from './hooks/useFileSystem';
 import './index.css';
@@ -25,6 +24,8 @@ function App() {
     const [imageRatings, setImageRatings] = useLocalStorage('imageRatings', {});
     const [imageComments, setImageComments] = useLocalStorage('imageComments', {});
     const [imageTags, setImageTags] = useLocalStorage('imageTags', {});
+    const [imageSecondaryTags, setImageSecondaryTags] = useLocalStorage('imageSecondaryTags', {});
+    const [imageBookmarks, setImageBookmarks] = useLocalStorage('imageBookmarks', {});
     const [removedTags, setRemovedTags] = useLocalStorage('removedTags', {});
 
     const { localFiles, selectFolder, isPrompting, pendingHandle, resumeSession } = useFileSystem();
@@ -129,16 +130,21 @@ function App() {
         // Tag Filter for Grid View
         if (activeFilterTags.length > 0) {
             items = items.filter(item => {
-                const tags = imageTags[item.name] || [];
-                return activeFilterTags.some(filterTag => tags.includes(filterTag));
+                const pTags = imageTags[item.name] || [];
+                const sTags = imageSecondaryTags[item.name] || [];
+                return activeFilterTags.some(filterTag => pTags.includes(filterTag) || sTags.includes(filterTag));
             });
         }
         return items;
-    }, [baseItems, activeFilterTags, imageTags]);
+    }, [baseItems, activeFilterTags, imageTags, imageSecondaryTags]);
 
     const uniqueTags = useMemo(() => {
-        return Array.from(new Set(Object.values(imageTags).flat()));
-    }, [imageTags]);
+        const allTags = new Set([
+            ...Object.values(imageTags).flat(),
+            ...Object.values(imageSecondaryTags).flat()
+        ]);
+        return Array.from(allTags);
+    }, [imageTags, imageSecondaryTags]);
 
     const allCategories = useMemo(() => {
         return Array.from(new Set(['Uncategorized', ...uniqueTags, ...customCategories]));
@@ -188,6 +194,7 @@ function App() {
         const newRat = {...imageRatings}; delete newRat[name]; setImageRatings(newRat);
         const newCom = {...imageComments}; delete newCom[name]; setImageComments(newCom);
         const newTag = {...imageTags}; delete newTag[name]; setImageTags(newTag);
+        const newSecTag = {...imageSecondaryTags}; delete newSecTag[name]; setImageSecondaryTags(newSecTag);
     };
 
     const togglePin = (name) => {
@@ -199,7 +206,16 @@ function App() {
         const data = {
             meta: { version: "1.0", timestamp: new Date().toISOString() },
             user: { name: userName, avatar: userAvatar, theme: currentTheme, columns: columnCount },
-            data: { pinned: pinnedImages, popularity: imagePopularity, ratings: imageRatings, comments: imageComments, tags: imageTags, externalUrls: externalUrls }
+            data: { 
+                pinned: pinnedImages, 
+                popularity: imagePopularity, 
+                ratings: imageRatings, 
+                comments: imageComments, 
+                tags: imageTags, 
+                secondaryTags: imageSecondaryTags, 
+                externalUrls: externalUrls,
+                bookmarks: imageBookmarks
+            }
         };
         const blob = new Blob([JSON.stringify(data, null, 2)], {type: "application/json"});
         const url = URL.createObjectURL(blob);
@@ -229,7 +245,9 @@ function App() {
                     if(imported.data.ratings) setImageRatings(imported.data.ratings);
                     if(imported.data.comments) setImageComments(imported.data.comments);
                     if(imported.data.tags) setImageTags(imported.data.tags);
+                    if(imported.data.secondaryTags) setImageSecondaryTags(imported.data.secondaryTags);
                     if(imported.data.externalUrls) setExternalUrls(imported.data.externalUrls);
+                    if(imported.data.bookmarks) setImageBookmarks(imported.data.bookmarks);
                 }
                 alert("Data imported successfully!");
                 setIsSidebarOpen(false);
@@ -280,9 +298,23 @@ function App() {
         }
     };
 
+    const toggleSecondaryTagForItem = (name, tag) => {
+        const current = imageSecondaryTags[name] || [];
+        if (current.includes(tag)) {
+            setImageSecondaryTags({...imageSecondaryTags, [name]: current.filter(t => t !== tag)});
+        } else {
+            setImageSecondaryTags({...imageSecondaryTags, [name]: [...current, tag]});
+        }
+    };
+
     const toggleTagModal = (tag) => {
         if (!activeItem) return;
         toggleTagForItem(activeItem.name, tag);
+    };
+
+    const toggleSecondaryTagModal = (tag) => {
+        if (!activeItem) return;
+        toggleSecondaryTagForItem(activeItem.name, tag);
     };
 
     const deleteTagGlobal = (tag) => {
@@ -291,6 +323,13 @@ function App() {
             newTags[name] = tags.filter(t => t !== tag);
         }
         setImageTags(newTags);
+
+        const newSecTags = {};
+        for (const [name, tags] of Object.entries(imageSecondaryTags)) {
+            newSecTags[name] = tags.filter(t => t !== tag);
+        }
+        setImageSecondaryTags(newSecTags);
+
         setActiveFilterTags(activeFilterTags.filter(t => t !== tag));
     };
 
@@ -312,6 +351,25 @@ function App() {
     const deleteComment = (date) => {
         if (!activeItem) return;
         deleteCommentForItem(activeItem.name, date);
+    };
+
+    const addBookmarkForItem = (name, time, bookmarkName) => {
+        setImageBookmarks(prev => {
+            const list = prev[name] || [];
+            const newBookmark = {
+                id: Date.now() + '_' + Math.random().toString(36).substring(2, 6),
+                time: time || 0,
+                name: bookmarkName || ''
+            };
+            return { ...prev, [name]: [...list, newBookmark] };
+        });
+    };
+
+    const deleteBookmarkForItem = (name, bookmarkId) => {
+        setImageBookmarks(prev => {
+            const list = prev[name] || [];
+            return { ...prev, [name]: list.filter(b => b.id !== bookmarkId) };
+        });
     };
 
     const setRatingForItem = (name, rating) => {
@@ -366,6 +424,11 @@ function App() {
                         setCustomCategories={setCustomCategories}
                         imageTags={imageTags}
                         setImageTags={setImageTags}
+                        imageSecondaryTags={imageSecondaryTags}
+                        setImageSecondaryTags={setImageSecondaryTags}
+                        imageBookmarks={imageBookmarks}
+                        addBookmarkForItem={addBookmarkForItem}
+                        deleteBookmarkForItem={deleteBookmarkForItem}
                         isGlobalMute={isGlobalMute}
                         resumeTimes={resumeTimes}
                         setResumeTime={updateResumeTime}
@@ -378,6 +441,7 @@ function App() {
                         setRatingForItem={setRatingForItem}
                         trackPopularity={trackPopularity} 
                         toggleTagForItem={toggleTagForItem}
+                        toggleSecondaryTagForItem={toggleSecondaryTagForItem}
                         shuffleMenuOpen={scrollShuffleMenuOpen} 
                         setShuffleMenuOpen={setScrollShuffleMenuOpen}
                     />
@@ -393,7 +457,12 @@ function App() {
             <ImageModal 
                 isOpen={modalIndex !== -1} closeModal={() => setModalIndex(-1)}
                 item={activeItem} showNext={showNext} showPrev={showPrev}
-                tags={activeItem ? (imageTags[activeItem.name] || []) : []} availableTags={uniqueTags} toggleTag={toggleTagModal}
+                tags={activeItem ? (imageTags[activeItem.name] || []) : []} 
+                secondaryTags={activeItem ? (imageSecondaryTags[activeItem.name] || []) : []}
+                bookmarks={activeItem ? (imageBookmarks[activeItem.name] || []) : []}
+                addBookmark={(time, name) => activeItem && addBookmarkForItem(activeItem.name, time, name)}
+                deleteBookmark={(id) => activeItem && deleteBookmarkForItem(activeItem.name, id)}
+                availableTags={uniqueTags} toggleTag={toggleTagModal} toggleSecondaryTag={toggleSecondaryTagModal}
                 comments={activeItem ? (imageComments[activeItem.name] || []) : []} addComment={addComment} deleteComment={deleteComment}
                 userName={userName} userAvatar={userAvatar}
                 rating={activeItem ? (imageRatings[activeItem.name] || 0) : 0} setRating={setRating} trackPopularity={trackPopularity}
