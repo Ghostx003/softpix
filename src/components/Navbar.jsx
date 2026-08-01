@@ -2,6 +2,7 @@ import React from 'react';
 
 const Navbar = ({
     isGlobalMute, toggleGlobalMute, onGlobalShuffle, surpriseMe,
+    isPlayAll, togglePlayAll,
     currentTypeFilter, setTypeFilter, columnCount, setColumnCount,
     sortBy, setSortBy, selectFolder, toggleSidebar,
     currentView, setCurrentView, openExportModal
@@ -45,7 +46,7 @@ const Navbar = ({
                     </svg>
                 </button>
 
-                <button className={`btn-surprise ${currentView === 'scroll' ? 'active-view' : ''}`} title="Scroll Feed" onClick={() => setCurrentView('scroll')} style={{ background: currentView === 'scroll' ? '#3b82f6' : 'rgba(255,255,255,0.1)', color: '#fff', border: '1px solid rgba(255,255,255,0.2)' }}>
+                <button className={`btn-surprise ${currentView === 'scroll' ? 'active-view' : ''}`} title="Scroll Feed" onClick={() => setCurrentView('scroll')}>
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                         <polyline points="8 9 12 5 16 9"></polyline>
                         <line x1="12" y1="5" x2="12" y2="19"></line>
@@ -63,6 +64,13 @@ const Navbar = ({
                         <line x1="4" y1="4" x2="9" y2="9"></line>
                     </svg>
                     Shuffle
+                </button>
+
+                <button className={`btn-surprise ${isPlayAll ? 'active-view' : ''}`} title="Play All Videos" onClick={togglePlayAll}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                    </svg>
+                    Play All
                 </button>
 
                 <button className="btn-surprise" title="Open a random item" onClick={surpriseMe}>

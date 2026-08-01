@@ -482,13 +482,13 @@ export const BookmarkOverlay = ({
                                 width: '100%',
                                 appearance: 'none',
                                 WebkitAppearance: 'none',
-                                height: '5px',
+                                height: '6px',
                                 borderRadius: '3px',
                                 border: 'none',
                                 outline: 'none',
                                 boxShadow: 'none',
                                 cursor: 'pointer',
-                                background: `linear-gradient(to right, #10b981 ${progressPercent}%, rgba(0, 0, 0, 0.7) ${progressPercent}%)`
+                                background: `linear-gradient(to right, #10b981 ${progressPercent}%, rgba(255, 255, 255, 0.3) ${progressPercent}%)`
                             }}
                         />
 

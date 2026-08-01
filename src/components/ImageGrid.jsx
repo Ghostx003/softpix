@@ -1,8 +1,11 @@
 import React, { useState, useEffect, useRef, memo } from 'react';
 
-// Shared Intersection Observer for massive performance gains
+// Shared Intersection Observers and Blob URL Cache for massive performance gains
 const visibilityCallbacks = new WeakMap();
+const playCallbacks = new WeakMap();
+const blobUrlCache = new Map();
 let sharedObserver = null;
+let playObserver = null;
 
 const getSharedObserver = () => {
     if (!sharedObserver && typeof window !== 'undefined') {
@@ -11,20 +14,39 @@ const getSharedObserver = () => {
                 const cb = visibilityCallbacks.get(entry.target);
                 if (cb) cb(entry.isIntersecting);
             });
-        }, { rootMargin: '800px' }); // Load items 800px before they appear
+        }, { rootMargin: '400px' });
     }
     return sharedObserver;
 };
 
-const GridItem = memo(({ item, index, openModal, togglePin, deleteImage, isPinned, isGlobalMute }) => {
+const getPlayObserver = () => {
+    if (!playObserver && typeof window !== 'undefined') {
+        playObserver = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                const cb = playCallbacks.get(entry.target);
+                if (cb) cb(entry.isIntersecting);
+            });
+        }, { rootMargin: '50px' });
+    }
+    return playObserver;
+};
+
+const GridItem = memo(({ item, index, openModal, togglePin, deleteImage, isPinned, isGlobalMute, isPlayAll }) => {
     const [mediaUrl, setMediaUrl] = useState('');
     const [isVisible, setIsVisible] = useState(false);
+    const [isInViewport, setIsInViewport] = useState(false);
     const [isHovered, setIsHovered] = useState(false);
     
     const containerRef = useRef(null);
     const videoRef = useRef(null);
     
-    // 1. Intersection Observer Logic
+    const itemId = item.id || item.name;
+    const itemType = item.type;
+    const itemHandle = item.handle;
+    const itemUrl = item.url;
+    const isVideo = item.isVideo;
+
+    // 1. Intersection Observer Logic (Asset Loading)
     useEffect(() => {
         const el = containerRef.current;
         if (!el) return;
@@ -46,68 +68,106 @@ const GridItem = memo(({ item, index, openModal, togglePin, deleteImage, isPinne
         };
     }, []);
 
-    // 2. Lazy File Loading Logic
+    // 1b. Viewport Observer Logic (Strict Video Playback)
     useEffect(() => {
-        let activeUrl = null;
+        const el = containerRef.current;
+        if (!el) return;
+
+        const pObserver = getPlayObserver();
+        
+        playCallbacks.set(el, (inView) => {
+            setIsInViewport(inView);
+        });
+        
+        pObserver.observe(el);
+
+        return () => {
+            pObserver.unobserve(el);
+            playCallbacks.delete(el);
+        };
+    }, []);
+
+    // 2. High-Performance Blob URL Caching (Zero ERR_FILE_NOT_FOUND)
+    useEffect(() => {
         let isActive = true;
 
         if (isVisible) {
-            if (item.type === 'local' && item.handle) {
-                item.handle.getFile().then(file => {
-                    if (isActive) {
-                        activeUrl = URL.createObjectURL(file);
-                        setMediaUrl(activeUrl);
-                    }
-                }).catch(e => console.error("Error creating url", e));
+            if (itemType === 'local' && itemHandle) {
+                if (blobUrlCache.has(itemId)) {
+                    setMediaUrl(blobUrlCache.get(itemId));
+                } else {
+                    itemHandle.getFile().then(file => {
+                        if (isActive) {
+                            const createdUrl = URL.createObjectURL(file);
+                            blobUrlCache.set(itemId, createdUrl);
+                            setMediaUrl(createdUrl);
+                        }
+                    }).catch(e => console.error("Error creating url", e));
+                }
             } else {
-                setMediaUrl(item.url);
+                setMediaUrl(itemUrl);
             }
-        } else {
-            // Immediately clear the state when no longer visible
-            setMediaUrl('');
         }
 
         return () => {
             isActive = false;
-            // Revoke the Blob URL to prevent massive memory leaks
-            if (item.type === 'local' && activeUrl) {
-                URL.revokeObjectURL(activeUrl);
-            }
         };
-    }, [isVisible, item]);
+    }, [isVisible, itemId, itemType, itemHandle, itemUrl]);
 
-    // 3. Hover Preview Logic
+    const indexRef = useRef(index);
+    indexRef.current = index;
+
+    // 3. Ultra-Smooth Staggered Auto-Play & AbortError Protection
     const handleMouseEnter = () => setIsHovered(true);
     const handleMouseLeave = () => setIsHovered(false);
 
     useEffect(() => {
-        if (!item.isVideo || !videoRef.current) return;
+        if (!isVideo || !videoRef.current) return;
         
         const video = videoRef.current;
-        if (isHovered && isVisible && mediaUrl) {
+        let isCancelled = false;
+        const shouldPlay = (isHovered || (isPlayAll && isInViewport)) && isVisible && mediaUrl;
+
+        if (shouldPlay) {
             video.muted = isGlobalMute;
-            const playPromise = video.play();
-            if (playPromise !== undefined) {
-                playPromise.catch(error => {
-                    console.log('Auto-play prevented:', error);
-                    if (!isGlobalMute) { 
-                        video.muted = true; 
-                        video.play().catch(e => {}); 
-                    }
-                });
-            }
+            const staggerDelay = isPlayAll ? (indexRef.current % 6) * 20 : 0;
+            
+            const timer = setTimeout(() => {
+                if (isCancelled || !videoRef.current) return;
+                const playPromise = video.play();
+                if (playPromise && typeof playPromise.then === 'function') {
+                    playPromise.catch(error => {
+                        if (error.name !== 'AbortError' && !isGlobalMute && videoRef.current) { 
+                            video.muted = true; 
+                            video.play().catch(() => {}); 
+                        }
+                    });
+                }
+            }, staggerDelay);
+
+            return () => {
+                isCancelled = true;
+                clearTimeout(timer);
+                if (video && !video.paused) {
+                    video.pause();
+                }
+            };
         } else {
-            video.pause();
-            video.currentTime = 0;
+            if (video && !video.paused) {
+                video.pause();
+            }
+            if (!isPlayAll) {
+                video.currentTime = 0;
+            }
         }
-    }, [isHovered, isGlobalMute, isVisible, mediaUrl, item.isVideo]);
+    }, [isHovered, isPlayAll, isInViewport, isGlobalMute, isVisible, mediaUrl, isVideo]);
 
     return (
         <div ref={containerRef} className="pin-container" onClick={() => openModal(index)} onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave}>
             {isVisible && mediaUrl ? (
                 <>
                     {item.isVideo ? (
-                        <video ref={videoRef} loop playsInline src={mediaUrl} preload="none"></video>
+                        <video ref={videoRef} loop playsInline src={mediaUrl} preload="metadata" muted={isGlobalMute}></video>
                     ) : (
                         <img src={mediaUrl} alt={item.name} loading="lazy" />
                     )}
@@ -133,11 +193,12 @@ const GridItem = memo(({ item, index, openModal, togglePin, deleteImage, isPinne
         prevProps.item === nextProps.item &&
         prevProps.index === nextProps.index &&
         prevProps.isPinned === nextProps.isPinned &&
-        prevProps.isGlobalMute === nextProps.isGlobalMute
+        prevProps.isGlobalMute === nextProps.isGlobalMute &&
+        prevProps.isPlayAll === nextProps.isPlayAll
     );
 });
 
-const ImageGrid = ({ displayedItems, openModal, togglePin, deleteImage, pinnedImages, isGlobalMute, columnCount, isPrompting, resumeSession, resumeFolderName }) => {
+const ImageGrid = ({ displayedItems, openModal, togglePin, deleteImage, pinnedImages, isGlobalMute, columnCount, isPrompting, resumeSession, resumeFolderName, isPlayAll }) => {
     
     if (isPrompting) {
         return (
@@ -169,7 +230,7 @@ const ImageGrid = ({ displayedItems, openModal, togglePin, deleteImage, pinnedIm
         <div id="image-grid" style={{ display: 'grid', gridTemplateColumns: columnCount === 'auto' ? 'repeat(auto-fill, minmax(300px, 1fr))' : `repeat(${columnCount}, 1fr)` }}>
             {displayedItems.map((item, index) => (
                 <GridItem 
-                    key={item.id} 
+                    key={`${item.id || item.name || 'item'}_${index}`} 
                     item={item} 
                     index={index} 
                     openModal={openModal} 
@@ -177,6 +238,7 @@ const ImageGrid = ({ displayedItems, openModal, togglePin, deleteImage, pinnedIm
                     deleteImage={deleteImage} 
                     isPinned={pinnedImages.includes(item.name)}
                     isGlobalMute={isGlobalMute}
+                    isPlayAll={isPlayAll}
                 />
             ))}
         </div>

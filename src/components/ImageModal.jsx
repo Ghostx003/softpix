@@ -3,7 +3,7 @@ import TagGroup from './TagGroup';
 import BookmarkOverlay from './BookmarkOverlay';
 
 const ImageModal = ({ 
-    isOpen, closeModal, item, showNext, showPrev,
+    isOpen, closeModal, item, showNext, showPrev, deleteImage,
     tags, secondaryTags = [], bookmarks = [], addBookmark, deleteBookmark,
     availableTags, toggleTag, toggleSecondaryTag,
     comments, addComment, deleteComment, userName, userAvatar,
@@ -15,45 +15,90 @@ const ImageModal = ({
     const [tagInput, setTagInput] = useState('');
     const videoRef = useRef(null);
 
+    const itemName = item?.name;
+    const itemType = item?.type;
+    const itemHandle = item?.handle;
+    const itemUrl = item?.url;
+
+    useEffect(() => {
+        if (!isOpen || !itemName) return;
+        trackPopularity(itemName);
+    }, [isOpen, itemName]);
+
     useEffect(() => {
         if (!isOpen || !item) return;
-        trackPopularity(item.name);
+        let activeUrl = null;
+        let isActive = true;
 
-        if (item.type === 'local' && item.handle) {
-            item.handle.getFile().then(file => {
-                const url = URL.createObjectURL(file);
-                setMediaUrl(url);
+        if (itemType === 'local' && itemHandle) {
+            itemHandle.getFile().then(file => {
+                if (isActive) {
+                    activeUrl = URL.createObjectURL(file);
+                    setMediaUrl(activeUrl);
+                }
             }).catch(e => console.error(e));
         } else {
-            setMediaUrl(item.url);
+            setMediaUrl(itemUrl);
         }
 
         return () => {
-            if (item.type === 'local' && mediaUrl) {
-                URL.revokeObjectURL(mediaUrl);
+            isActive = false;
+            if (itemType === 'local' && activeUrl) {
+                URL.revokeObjectURL(activeUrl);
             }
         };
-    }, [isOpen, item]);
+    }, [isOpen, itemName, itemType, itemUrl, itemHandle]);
+
+    const lastScrollTime = useRef(0);
 
     useEffect(() => {
         const handleKeyDown = (e) => {
             if (!isOpen) return;
             if (e.key === 'Escape') closeModal();
-            if (document.activeElement.tagName !== 'INPUT') {
-                if (e.key === 'ArrowRight' || e.key === 'PageDown') showNext();
-                if (e.key === 'ArrowLeft' || e.key === 'PageUp') showPrev();
+            if (document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
+                if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === 'ArrowDown') showNext();
+                if (e.key === 'ArrowLeft' || e.key === 'PageUp' || e.key === 'ArrowUp') showPrev();
             }
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [isOpen, showNext, showPrev, closeModal]);
 
+    useEffect(() => {
+        if (!isOpen) return;
+
+        const handleWheel = (e) => {
+            const detailsPanel = e.target.closest('.modal-details-container');
+            if (detailsPanel) {
+                const isScrollable = detailsPanel.scrollHeight > detailsPanel.clientHeight;
+                if (isScrollable) {
+                    const atTop = detailsPanel.scrollTop === 0;
+                    const atBottom = Math.abs(detailsPanel.scrollHeight - detailsPanel.clientHeight - detailsPanel.scrollTop) < 2;
+                    if (e.deltaY < 0 && !atTop) return;
+                    if (e.deltaY > 0 && !atBottom) return;
+                }
+            }
+
+            const now = Date.now();
+            if (now - lastScrollTime.current < 350) return;
+
+            if (Math.abs(e.deltaY) > 15) {
+                if (e.deltaY > 0) {
+                    lastScrollTime.current = now;
+                    showNext();
+                } else if (e.deltaY < 0) {
+                    lastScrollTime.current = now;
+                    showPrev();
+                }
+            }
+        };
+
+        window.addEventListener('wheel', handleWheel, { passive: true });
+        return () => window.removeEventListener('wheel', handleWheel);
+    }, [isOpen, showNext, showPrev]);
+
     const handleVideoEnded = () => {
-        if (isAutoShuffleOn) {
-            showNext();
-        } else {
-            showNext();
-        }
+        showNext();
     };
 
     const formatTime = (seconds) => {
@@ -84,7 +129,44 @@ const ImageModal = ({
                     />
                 </div>
                 <div className="modal-details-container">
-                    <h3 style={{ wordWrap: 'break-word', marginTop: 0, marginBottom: '1.2rem', fontSize: '1.15rem', fontWeight: 700, color: 'var(--text-primary)', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '0.75rem' }}>{item.name}</h3>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '0.75rem', marginBottom: '1.2rem', gap: '10px' }}>
+                        <h3 style={{ wordWrap: 'break-word', margin: 0, fontSize: '1.15rem', fontWeight: 700, color: 'var(--text-primary)' }}>{item.name}</h3>
+                        {deleteImage && (
+                            <button 
+                                title="Delete item from gallery" 
+                                onClick={() => {
+                                    if (window.confirm("Are you sure you want to remove this item from your gallery?")) {
+                                        deleteImage(item);
+                                        closeModal();
+                                    }
+                                }}
+                                style={{
+                                    background: 'rgba(239, 68, 68, 0.15)',
+                                    border: '1px solid rgba(239, 68, 68, 0.4)',
+                                    color: '#f87171',
+                                    width: '36px',
+                                    height: '36px',
+                                    borderRadius: '50%',
+                                    cursor: 'pointer',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    flexShrink: 0,
+                                    transition: 'all 0.2s ease'
+                                }}
+                                onMouseEnter={(e) => {
+                                    e.currentTarget.style.background = 'rgba(239, 68, 68, 0.3)';
+                                    e.currentTarget.style.transform = 'scale(1.08)';
+                                }}
+                                onMouseLeave={(e) => {
+                                    e.currentTarget.style.background = 'rgba(239, 68, 68, 0.15)';
+                                    e.currentTarget.style.transform = 'scale(1)';
+                                }}
+                            >
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                            </button>
+                        )}
+                    </div>
                     
                     <div className="modal-tags-section" style={{ background: 'rgba(255,255,255,0.02)', padding: '1rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.06)', marginTop: 0 }}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.6rem' }}>

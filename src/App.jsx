@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import Navbar from './components/Navbar';
 import Sidebar from './components/Sidebar';
 import TagBar from './components/TagBar';
@@ -7,6 +7,7 @@ import ScrollFeedView from './components/ScrollFeedView';
 import ImageModal from './components/ImageModal';
 import NameModal from './components/NameModal';
 import ExportModal from './components/ExportModal';
+import FolderModal from './components/FolderModal';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { useFileSystem } from './hooks/useFileSystem';
 import './index.css';
@@ -27,8 +28,9 @@ function App() {
     const [imageSecondaryTags, setImageSecondaryTags] = useLocalStorage('imageSecondaryTags', {});
     const [imageBookmarks, setImageBookmarks] = useLocalStorage('imageBookmarks', {});
     const [removedTags, setRemovedTags] = useLocalStorage('removedTags', {});
+    const [deletedImages, setDeletedImages] = useLocalStorage('softpixDeletedImages', []);
 
-    const { localFiles, selectFolder, isPrompting, pendingHandle, resumeSession } = useFileSystem();
+    const { localFiles, folders, addFolder, toggleFolder, removeFolder, isPrompting, pendingHandle, resumeSession } = useFileSystem();
 
     // --- UI State ---
     const [isGlobalMute, setIsGlobalMute] = useState(true);
@@ -41,10 +43,51 @@ function App() {
     const [isLoading, setIsLoading] = useState(false);
     const [modalIndex, setModalIndex] = useState(-1);
     const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+    const [isFolderModalOpen, setIsFolderModalOpen] = useState(false);
     const [isAutoShuffleOn, setAutoShuffleOn] = useState(false);
     const [resumeTimes, setResumeTimes] = useState({});
     const [customCategories, setCustomCategories] = useState([]);
     const [scrollShuffleMenuOpen, setScrollShuffleMenuOpen] = useState(false);
+    const [isPlayAll, setIsPlayAll] = useState(false);
+    const [shuffledItems, setShuffledItems] = useState(null);
+    const [isHeaderVisible, setIsHeaderVisible] = useState(true);
+    const lastBottomShuffleTime = useRef(0);
+
+    const handleGridScroll = (e) => {
+        const target = e.target;
+        const scrollTop = target.scrollTop;
+        if (scrollTop > 60) {
+            setIsHeaderVisible(false);
+        } else {
+            setIsHeaderVisible(true);
+        }
+
+        const scrollHeight = target.scrollHeight;
+        const clientHeight = target.clientHeight;
+        const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+
+        const now = Date.now();
+        if (scrollHeight > clientHeight + 100 && distanceFromBottom < 40 && now - lastBottomShuffleTime.current > 1000) {
+            lastBottomShuffleTime.current = now;
+            shuffleGrid();
+            target.scrollTop = 0;
+            setIsHeaderVisible(true);
+        }
+    };
+
+    useEffect(() => {
+        setShuffledItems(null);
+    }, [localFiles, externalUrls, sortBy, currentTypeFilter, activeFilterTags]);
+
+    const shuffleGrid = () => {
+        let itemsToShuffle = [...displayedItems];
+        if (itemsToShuffle.length <= 1) return;
+        for (let i = itemsToShuffle.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [itemsToShuffle[i], itemsToShuffle[j]] = [itemsToShuffle[j], itemsToShuffle[i]];
+        }
+        setShuffledItems(itemsToShuffle);
+    };
 
     const handleGlobalShuffle = () => {
         if (currentView === 'grid') {
@@ -88,15 +131,18 @@ function App() {
         });
     }, [localFiles, setImageTags, removedTags]);
 
-    // --- Data processing (Combine, filter, sort) ---
+    // --- Media Data ---
     const baseItems = useMemo(() => {
         let items = [...localFiles];
-        
+
         externalUrls.forEach(url => {
-            const name = url.split('/').pop().split('?')[0];
-            const isVid = ['.mp4', '.webm', '.ogg', '.mov', '.m4v'].some(ext => name.toLowerCase().endsWith(ext));
+            const name = url.split('/').pop().split('?')[0] || url;
+            const isVid = ['.mp4', '.webm', '.ogg', '.mov', '.m4v', '.mkv'].some(ext => name.toLowerCase().endsWith(ext));
             items.push({ type: 'external', name: name, id: url, url: url, lastModified: 0, isVideo: isVid });
         });
+
+        // Filter out deleted items
+        items = items.filter(item => !deletedImages.includes(item.name));
 
         // 1. Sort
         if (sortBy.startsWith('rating-')) {
@@ -123,9 +169,13 @@ function App() {
         }
 
         return items;
-    }, [localFiles, externalUrls, sortBy, currentTypeFilter, pinnedImages, imageRatings, imagePopularity]);
+    }, [localFiles, externalUrls, sortBy, currentTypeFilter, pinnedImages, imageRatings, imagePopularity, deletedImages]);
 
     const displayedItems = useMemo(() => {
+        if (shuffledItems !== null) {
+            return shuffledItems;
+        }
+
         let items = [...baseItems];
         // Tag Filter for Grid View
         if (activeFilterTags.length > 0) {
@@ -136,29 +186,36 @@ function App() {
             });
         }
         return items;
-    }, [baseItems, activeFilterTags, imageTags, imageSecondaryTags]);
+    }, [baseItems, activeFilterTags, imageTags, imageSecondaryTags, shuffledItems]);
 
     const uniqueTags = useMemo(() => {
         const allTags = new Set([
             ...Object.values(imageTags).flat(),
-            ...Object.values(imageSecondaryTags).flat()
+            ...Object.values(imageSecondaryTags).flat(),
+            ...baseItems.flatMap(item => item.folderTags || [])
         ]);
         return Array.from(allTags);
-    }, [imageTags, imageSecondaryTags]);
+    }, [imageTags, imageSecondaryTags, baseItems]);
+
+    const tagCounts = useMemo(() => {
+        const counts = {};
+        baseItems.forEach(item => {
+            const pTags = imageTags[item.name] || [];
+            const sTags = imageSecondaryTags[item.name] || [];
+            const fTags = item.folderTags || [];
+            const itemTags = new Set([...pTags, ...sTags, ...fTags]);
+            itemTags.forEach(t => {
+                counts[t] = (counts[t] || 0) + 1;
+            });
+        });
+        return counts;
+    }, [baseItems, imageTags, imageSecondaryTags]);
 
     const allCategories = useMemo(() => {
         return Array.from(new Set(['Uncategorized', ...uniqueTags, ...customCategories]));
     }, [uniqueTags, customCategories]);
 
     // --- Actions ---
-    const shuffleGrid = () => {
-        // We can't trivially shuffle a useMemo output in a purely reactive way without external state.
-        // For simplicity in React, we might randomize a sort key or just pick random in 'Surprise Me'.
-        // Let's implement a random permutation of items if needed, but for now we skip shuffling the whole grid 
-        // because it conflicts with standard sorting. We'll leave it as a no-op or just rely on sort.
-        alert("Shuffle grid is best used with Surprise Me in this version!");
-    };
-
     const surpriseMe = () => {
         if (displayedItems.length === 0) {
             alert("No items found! Please select a folder or clear filters.");
@@ -182,19 +239,26 @@ function App() {
     };
 
     const deleteImage = (item) => {
-        if (item.type === 'external') {
-            setExternalUrls(externalUrls.filter(u => u !== item.url));
-        }
-        // local files are handled by hook/reload, we don't delete them from disk here, 
-        // but we should remove their metadata.
+        if (!item) return;
         const name = item.name;
-        setPinnedImages(pinnedImages.filter(n => n !== name));
         
-        const newPop = {...imagePopularity}; delete newPop[name]; setImagePopularity(newPop);
-        const newRat = {...imageRatings}; delete newRat[name]; setImageRatings(newRat);
-        const newCom = {...imageComments}; delete newCom[name]; setImageComments(newCom);
-        const newTag = {...imageTags}; delete newTag[name]; setImageTags(newTag);
-        const newSecTag = {...imageSecondaryTags}; delete newSecTag[name]; setImageSecondaryTags(newSecTag);
+        if (item.type === 'external') {
+            setExternalUrls(prev => prev.filter(u => u !== item.url));
+        } else {
+            setDeletedImages(prev => prev.includes(name) ? prev : [...prev, name]);
+        }
+
+        if (shuffledItems) {
+            setShuffledItems(prev => prev ? prev.filter(i => i.name !== name) : null);
+        }
+
+        setPinnedImages(prev => prev.filter(n => n !== name));
+        
+        setImagePopularity(prev => { const n = {...prev}; delete n[name]; return n; });
+        setImageRatings(prev => { const n = {...prev}; delete n[name]; return n; });
+        setImageComments(prev => { const n = {...prev}; delete n[name]; return n; });
+        setImageTags(prev => { const n = {...prev}; delete n[name]; return n; });
+        setImageSecondaryTags(prev => { const n = {...prev}; delete n[name]; return n; });
     };
 
     const togglePin = (name) => {
@@ -387,31 +451,36 @@ function App() {
     };
 
     return (
-        <div className="app-container" style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
-            <Navbar 
-                isGlobalMute={isGlobalMute} toggleGlobalMute={() => setIsGlobalMute(!isGlobalMute)}
-                onGlobalShuffle={handleGlobalShuffle} surpriseMe={surpriseMe}
-                currentTypeFilter={currentTypeFilter} setTypeFilter={setTypeFilter}
-                columnCount={columnCount} setColumnCount={setColumnCount}
-                sortBy={sortBy} setSortBy={setSortBy}
-                selectFolder={selectFolder} toggleSidebar={() => setIsSidebarOpen(true)}
-                currentView={currentView} setCurrentView={setCurrentView}
-                openExportModal={() => setIsExportModalOpen(true)}
-            />
-            {currentView === 'grid' && (
-                <TagBar 
-                    activeFilterTags={activeFilterTags} setActiveFilterTags={setActiveFilterTags} 
-                    uniqueTags={uniqueTags} deleteTag={deleteTagGlobal} 
+        <div className="app-container" style={{ position: 'relative', height: '100vh', overflow: 'hidden', width: '100%' }}>
+            <div className={`header-wrapper ${isHeaderVisible ? '' : 'hidden-header'}`}>
+                <Navbar 
+                    isGlobalMute={isGlobalMute} toggleGlobalMute={() => setIsGlobalMute(!isGlobalMute)}
+                    onGlobalShuffle={handleGlobalShuffle} surpriseMe={surpriseMe}
+                    isPlayAll={isPlayAll} togglePlayAll={() => setIsPlayAll(!isPlayAll)}
+                    currentTypeFilter={currentTypeFilter} setTypeFilter={setTypeFilter}
+                    columnCount={columnCount} setColumnCount={setColumnCount}
+                    sortBy={sortBy} setSortBy={setSortBy}
+                    selectFolder={() => setIsFolderModalOpen(true)} toggleSidebar={() => setIsSidebarOpen(true)}
+                    currentView={currentView} setCurrentView={setCurrentView}
+                    openExportModal={() => setIsExportModalOpen(true)}
                 />
-            )}
-            <main style={{ flex: 1, overflow: 'hidden' }}>
                 {currentView === 'grid' && (
-                    <div style={{ padding: '20px', overflowY: 'auto', height: '100%' }}>
+                    <TagBar 
+                        activeFilterTags={activeFilterTags} setActiveFilterTags={setActiveFilterTags} 
+                        uniqueTags={uniqueTags} deleteTag={deleteTagGlobal} 
+                        tagCounts={tagCounts}
+                    />
+                )}
+            </div>
+            <main style={{ height: '100%', width: '100%', overflow: 'hidden' }}>
+                {currentView === 'grid' && (
+                    <div onScroll={handleGridScroll} style={{ paddingTop: '125px', paddingLeft: '20px', paddingRight: '20px', paddingBottom: '20px', overflowY: 'auto', height: '100%', boxSizing: 'border-box' }}>
                         <ImageGrid 
                             displayedItems={displayedItems} openModal={setModalIndex} 
                             togglePin={togglePin} deleteImage={deleteImage} 
                             pinnedImages={pinnedImages} isGlobalMute={isGlobalMute} columnCount={columnCount}
                             isPrompting={isPrompting} resumeSession={resumeSession} resumeFolderName={pendingHandle?.name}
+                            isPlayAll={isPlayAll && modalIndex === -1}
                         />
                     </div>
                 )}
@@ -457,6 +526,7 @@ function App() {
             <ImageModal 
                 isOpen={modalIndex !== -1} closeModal={() => setModalIndex(-1)}
                 item={activeItem} showNext={showNext} showPrev={showPrev}
+                deleteImage={deleteImage}
                 tags={activeItem ? (imageTags[activeItem.name] || []) : []} 
                 secondaryTags={activeItem ? (imageSecondaryTags[activeItem.name] || []) : []}
                 bookmarks={activeItem ? (imageBookmarks[activeItem.name] || []) : []}
@@ -479,6 +549,15 @@ function App() {
                     allCategories={uniqueTags}
                 />
             )}
+
+            <FolderModal 
+                isOpen={isFolderModalOpen}
+                closeModal={() => setIsFolderModalOpen(false)}
+                folders={folders}
+                addFolder={addFolder}
+                toggleFolder={toggleFolder}
+                removeFolder={removeFolder}
+            />
         </div>
     );
 }

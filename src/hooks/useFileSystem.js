@@ -6,7 +6,8 @@ const allExtensions = [...imageExtensions, ...videoExtensions];
 
 export function useFileSystem() {
     const [localFiles, setLocalFiles] = useState([]);
-    const [pendingHandle, setPendingHandle] = useState(null);
+    const [folders, setFolders] = useState([]);
+    const [pendingFolders, setPendingFolders] = useState([]);
     const [isPrompting, setIsPrompting] = useState(false);
 
     function openDB() {
@@ -18,33 +19,62 @@ export function useFileSystem() {
         });
     }
 
-    async function saveFolderHandle(handle) {
+    async function saveFolderToDB(folderObj) {
         try {
             const db = await openDB();
             const tx = db.transaction('folder', 'readwrite');
-            tx.objectStore('folder').put({ id: 'mainFolder', handle });
+            tx.objectStore('folder').put(folderObj);
             return tx.complete;
         } catch (e) {
             console.error("Could not save folder handle.", e);
         }
     }
 
-    async function getSavedFolderHandle() {
+    async function removeFolderFromDB(id) {
+        try {
+            const db = await openDB();
+            const tx = db.transaction('folder', 'readwrite');
+            tx.objectStore('folder').delete(id);
+            return tx.complete;
+        } catch (e) {
+            console.error("Could not delete folder handle.", e);
+        }
+    }
+
+    async function getSavedFoldersFromDB() {
         try {
             const db = await openDB();
             return new Promise((resolve) => {
                 const tx = db.transaction('folder', 'readonly');
-                const req = tx.objectStore('folder').get('mainFolder');
-                req.onsuccess = () => resolve(req.result ? req.result.handle : null);
-                req.onerror = () => resolve(null);
+                const req = tx.objectStore('folder').getAll();
+                req.onsuccess = () => {
+                    const items = req.result || [];
+                    const legacy = items.find(i => i.id === 'mainFolder');
+                    if (legacy && legacy.handle) {
+                        const migrated = {
+                            id: 'folder_' + Date.now(),
+                            name: legacy.handle.name || 'Selected Folder',
+                            handle: legacy.handle,
+                            enabled: true
+                        };
+                        const writeTx = db.transaction('folder', 'readwrite');
+                        const store = writeTx.objectStore('folder');
+                        store.delete('mainFolder');
+                        store.put(migrated);
+                        resolve(items.filter(i => i.id !== 'mainFolder').concat(migrated));
+                    } else {
+                        resolve(items);
+                    }
+                };
+                req.onerror = () => resolve([]);
             });
         } catch (e) {
-            console.error("Could not retrieve folder handle.", e);
-            return null;
+            console.error("Could not retrieve folders from DB.", e);
+            return [];
         }
     }
 
-    async function traverseDirectory(dirHandle, parentTags = []) {
+    async function traverseDirectory(dirHandle, parentTags = [], folderId = '') {
         let files = [];
         try {
             for await (const entry of dirHandle.values()) {
@@ -54,15 +84,16 @@ export function useFileSystem() {
                         files.push({
                             handle: entry,
                             name: entry.name,
-                            id: parentTags.length > 0 ? parentTags.join('/') + '/' + entry.name : entry.name,
+                            id: (folderId ? folderId + '/' : '') + (parentTags.length > 0 ? parentTags.join('/') + '/' + entry.name : entry.name),
                             lastModified: file.lastModified,
                             isVideo: videoExtensions.some(ext => entry.name.toLowerCase().endsWith(ext)),
                             type: 'local',
-                            folderTags: parentTags
+                            folderTags: parentTags,
+                            folderId: folderId
                         });
                     }
                 } else if (entry.kind === 'directory') {
-                    const subFiles = await traverseDirectory(entry, [...parentTags, entry.name]);
+                    const subFiles = await traverseDirectory(entry, [...parentTags, entry.name], folderId);
                     files = files.concat(subFiles);
                 }
             }
@@ -72,64 +103,153 @@ export function useFileSystem() {
         return files;
     }
 
-    async function loadLocalImages(handle) {
-        if (!handle) {
+    async function loadLocalImages(targetFolders) {
+        const folderList = targetFolders !== undefined ? targetFolders : folders;
+        const enabledFolders = folderList.filter(f => f.enabled);
+
+        if (enabledFolders.length === 0) {
             setLocalFiles([]);
             return;
         }
-        try {
-            const files = await traverseDirectory(handle);
-            setLocalFiles(files);
-        } catch (e) {
-            console.error("Error reading files. Permission may have been revoked.", e);
-            alert("Could not read files. Please re-select the folder.");
-            setLocalFiles([]);
+
+        let allFiles = [];
+        for (const f of enabledFolders) {
+            try {
+                const files = await traverseDirectory(f.handle, [f.name], f.id);
+                allFiles = allFiles.concat(files);
+            } catch (e) {
+                console.error("Error reading files for folder " + f.name, e);
+            }
         }
+        setLocalFiles(allFiles);
     }
 
-    async function selectFolder() {
+    async function addFolder() {
         try {
             const folderHandle = await window.showDirectoryPicker({
                 id: 'softpix_working_dir',
                 startIn: 'downloads'
             });
-            await saveFolderHandle(folderHandle);
+
+            const existing = folders.find(f => f.name === folderHandle.name);
+            let updatedFolders;
+            if (existing) {
+                const updatedItem = { ...existing, handle: folderHandle, enabled: true };
+                await saveFolderToDB(updatedItem);
+                updatedFolders = folders.map(f => f.id === existing.id ? updatedItem : f);
+            } else {
+                const newFolder = {
+                    id: 'folder_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
+                    name: folderHandle.name,
+                    handle: folderHandle,
+                    enabled: true
+                };
+                await saveFolderToDB(newFolder);
+                updatedFolders = [...folders, newFolder];
+            }
+
+            setFolders(updatedFolders);
             setIsPrompting(false);
-            setPendingHandle(null);
-            await loadLocalImages(folderHandle);
+            setPendingFolders([]);
+            await loadLocalImages(updatedFolders);
+            return true;
         } catch (err) {
-            console.error('Error selecting folder:', err);
+            if (err.name !== 'AbortError') {
+                console.error('Error selecting folder:', err);
+            }
+            return false;
         }
     }
 
+    async function toggleFolder(id) {
+        const updated = folders.map(f => {
+            if (f.id === id) {
+                const updatedFolder = { ...f, enabled: !f.enabled };
+                saveFolderToDB(updatedFolder);
+                return updatedFolder;
+            }
+            return f;
+        });
+        setFolders(updated);
+        await loadLocalImages(updated);
+    }
+
+    async function removeFolder(id) {
+        const updated = folders.filter(f => f.id !== id);
+        await removeFolderFromDB(id);
+        setFolders(updated);
+        await loadLocalImages(updated);
+    }
+
+    async function selectFolder() {
+        return await addFolder();
+    }
+
     async function resumeSession() {
-        if (pendingHandle) {
-            const permission = await pendingHandle.requestPermission({ mode: 'read' });
-            if (permission === 'granted') {
-                await loadLocalImages(pendingHandle);
+        if (pendingFolders.length > 0) {
+            let allGranted = true;
+            for (const folder of pendingFolders) {
+                try {
+                    const permission = await folder.handle.requestPermission({ mode: 'read' });
+                    if (permission !== 'granted') {
+                        allGranted = false;
+                    }
+                } catch (e) {
+                    allGranted = false;
+                }
+            }
+            if (allGranted) {
                 setIsPrompting(false);
-                setPendingHandle(null);
+                setPendingFolders([]);
+                await loadLocalImages(folders);
             } else {
-                alert("Permission denied. Please select the folder again.");
+                alert("Permission denied for one or more folders. Please select the folder again.");
             }
         }
     }
 
     useEffect(() => {
         async function init() {
-            const folderHandle = await getSavedFolderHandle();
-            if (folderHandle) {
-                const permission = await folderHandle.queryPermission({ mode: 'read' });
-                if (permission === 'granted') {
-                    await loadLocalImages(folderHandle);
-                } else if (permission === 'prompt') {
-                    setPendingHandle(folderHandle);
+            const savedFolders = await getSavedFoldersFromDB();
+            if (savedFolders && savedFolders.length > 0) {
+                setFolders(savedFolders);
+                const prompting = [];
+                for (const f of savedFolders) {
+                    if (f.enabled) {
+                        try {
+                            const permission = await f.handle.queryPermission({ mode: 'read' });
+                            if (permission === 'prompt') {
+                                prompting.push(f);
+                            }
+                        } catch (e) {
+                            console.warn("Permission check failed for folder", f.name);
+                        }
+                    }
+                }
+                if (prompting.length > 0) {
+                    setPendingFolders(prompting);
                     setIsPrompting(true);
+                } else {
+                    await loadLocalImages(savedFolders);
                 }
             }
         }
         init();
     }, []);
 
-    return { localFiles, setLocalFiles, selectFolder, isPrompting, pendingHandle, resumeSession };
+    const pendingHandle = pendingFolders.length > 0 ? pendingFolders[0].handle : null;
+
+    return { 
+        localFiles, 
+        setLocalFiles, 
+        folders, 
+        addFolder, 
+        toggleFolder, 
+        removeFolder, 
+        selectFolder, 
+        isPrompting, 
+        pendingHandle, 
+        pendingFolders, 
+        resumeSession 
+    };
 }
