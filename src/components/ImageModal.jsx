@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import TagGroup from './TagGroup';
 import BookmarkOverlay from './BookmarkOverlay';
+import ContextMenu from './ContextMenu';
+import { copyImageToClipboard } from '../utils/copyImage';
 
 const ImageModal = ({ 
     isOpen, closeModal, item, showNext, showPrev, deleteImage,
@@ -8,12 +10,20 @@ const ImageModal = ({
     availableTags, toggleTag, toggleSecondaryTag,
     comments, addComment, deleteComment, userName, userAvatar,
     rating, setRating, trackPopularity,
-    isAutoShuffleOn, setAutoShuffleOn
+    isAutoShuffleOn, setAutoShuffleOn,
+    isGlobalMute = true,
+    togglePin, isPinned
 }) => {
     const [mediaUrl, setMediaUrl] = useState('');
     const [commentInput, setCommentInput] = useState('');
     const [tagInput, setTagInput] = useState('');
     const videoRef = useRef(null);
+
+    useEffect(() => {
+        if (videoRef.current) {
+            videoRef.current.muted = isGlobalMute;
+        }
+    }, [isGlobalMute]);
 
     const itemName = item?.name;
     const itemType = item?.type;
@@ -55,14 +65,34 @@ const ImageModal = ({
         const handleKeyDown = (e) => {
             if (!isOpen) return;
             if (e.key === 'Escape') closeModal();
-            if (document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
-                if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === 'ArrowDown') showNext();
-                if (e.key === 'ArrowLeft' || e.key === 'PageUp' || e.key === 'ArrowUp') showPrev();
+            const activeEl = document.activeElement;
+            const isInputFocused = activeEl && (
+                activeEl.tagName === 'INPUT' || 
+                activeEl.tagName === 'TEXTAREA' || 
+                activeEl.isContentEditable
+            );
+            if (!isInputFocused) {
+                if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === 'ArrowDown' || e.key === 'n' || e.key === 'N') showNext();
+                if (e.key === 'ArrowLeft' || e.key === 'PageUp' || e.key === 'ArrowUp' || e.key === 'p' || e.key === 'P') showPrev();
+                if (e.key === 'l' || e.key === 'L') {
+                    if (videoRef.current) {
+                        videoRef.current.loop = !videoRef.current.loop;
+                    }
+                }
+                if (e.key === 's' || e.key === 'S') {
+                    setAutoShuffleOn(prev => !prev);
+                }
+                
+                const num = parseInt(e.key, 10);
+                if (!isNaN(num) && num >= 1 && num <= 5) {
+                    e.preventDefault();
+                    setRating(rating === num ? 0 : num);
+                }
             }
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [isOpen, showNext, showPrev, closeModal]);
+    }, [isOpen, showNext, showPrev, closeModal, rating, setRating]);
 
     useEffect(() => {
         if (!isOpen) return;
@@ -79,6 +109,35 @@ const ImageModal = ({
                 }
             }
 
+            const mediaContainer = e.target.closest('.modal-image-container') || document.querySelector('.modal-image-container');
+            const videoEl = mediaContainer ? (mediaContainer.querySelector('video') || videoRef.current) : (videoRef.current || document.querySelector('#image-modal video'));
+            
+            let isLeftHalf = false;
+            if (mediaContainer) {
+                const rect = mediaContainer.getBoundingClientRect();
+                isLeftHalf = e.clientX < (rect.left + rect.width / 2);
+            } else {
+                isLeftHalf = e.clientX < (window.innerWidth / 2);
+            }
+
+            if (isLeftHalf && videoEl) {
+                e.preventDefault();
+                const now = Date.now();
+                if (now - lastScrollTime.current < 120) return;
+                lastScrollTime.current = now;
+
+                if (Math.abs(e.deltaY) > 5) {
+                    if (e.deltaY < 0) {
+                        // Scroll UP -> Move FORWARD +10 seconds
+                        videoEl.currentTime = Math.min(videoEl.duration || Infinity, videoEl.currentTime + 10);
+                    } else {
+                        // Scroll DOWN -> Move BACKWARD -10 seconds
+                        videoEl.currentTime = Math.max(0, videoEl.currentTime - 10);
+                    }
+                }
+                return;
+            }
+
             const now = Date.now();
             if (now - lastScrollTime.current < 350) return;
 
@@ -93,7 +152,7 @@ const ImageModal = ({
             }
         };
 
-        window.addEventListener('wheel', handleWheel, { passive: true });
+        window.addEventListener('wheel', handleWheel, { passive: false });
         return () => window.removeEventListener('wheel', handleWheel);
     }, [isOpen, showNext, showPrev]);
 
@@ -115,7 +174,7 @@ const ImageModal = ({
             <div className="modal-content" onClick={e => e.stopPropagation()}>
                 <div className="modal-image-container" style={{ position: 'relative' }}>
                     {item.isVideo ? (
-                        <video ref={videoRef} src={mediaUrl} autoPlay onEnded={handleVideoEnded} style={{ maxWidth: '100%', maxHeight: '100%' }}></video>
+                        <video ref={videoRef} src={mediaUrl} autoPlay muted={isGlobalMute} onEnded={handleVideoEnded} style={{ maxWidth: '100%', maxHeight: '100%' }}></video>
                     ) : (
                         <img src={mediaUrl} alt={item.name} style={{ maxWidth: '100%', maxHeight: '100%' }} />
                     )}
@@ -126,46 +185,68 @@ const ImageModal = ({
                         bookmarks={bookmarks} 
                         addBookmark={addBookmark} 
                         deleteBookmark={deleteBookmark} 
+                        togglePin={togglePin}
+                        deleteImage={deleteImage}
+                        rating={rating}
+                        setRating={setRating}
+                        isPinned={isPinned}
                     />
                 </div>
                 <div className="modal-details-container">
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '0.75rem', marginBottom: '1.2rem', gap: '10px' }}>
-                        <h3 style={{ wordWrap: 'break-word', margin: 0, fontSize: '1.15rem', fontWeight: 700, color: 'var(--text-primary)' }}>{item.name}</h3>
-                        {deleteImage && (
-                            <button 
-                                title="Delete item from gallery" 
-                                onClick={() => {
-                                    if (window.confirm("Are you sure you want to remove this item from your gallery?")) {
-                                        deleteImage(item);
-                                        closeModal();
-                                    }
-                                }}
-                                style={{
-                                    background: 'rgba(239, 68, 68, 0.15)',
-                                    border: '1px solid rgba(239, 68, 68, 0.4)',
-                                    color: '#f87171',
-                                    width: '36px',
-                                    height: '36px',
-                                    borderRadius: '50%',
-                                    cursor: 'pointer',
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    flexShrink: 0,
-                                    transition: 'all 0.2s ease'
-                                }}
-                                onMouseEnter={(e) => {
-                                    e.currentTarget.style.background = 'rgba(239, 68, 68, 0.3)';
-                                    e.currentTarget.style.transform = 'scale(1.08)';
-                                }}
-                                onMouseLeave={(e) => {
-                                    e.currentTarget.style.background = 'rgba(239, 68, 68, 0.15)';
-                                    e.currentTarget.style.transform = 'scale(1)';
-                                }}
-                            >
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
-                            </button>
-                        )}
+                    <div style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '0.75rem', marginBottom: '1.2rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px' }}>
+                            <h3 style={{ wordBreak: 'break-word', margin: 0, fontSize: '1.15rem', fontWeight: 700, color: 'var(--text-primary)', flex: 1, minWidth: 0 }}>{item.name}</h3>
+                            {deleteImage && (
+                                <button 
+                                    title="Delete item from gallery" 
+                                    onClick={() => {
+                                        if (window.confirm("Are you sure you want to remove this item from your gallery?")) {
+                                            deleteImage(item);
+                                            closeModal();
+                                        }
+                                    }}
+                                    style={{
+                                        background: 'rgba(239, 68, 68, 0.15)',
+                                        border: '1px solid rgba(239, 68, 68, 0.4)',
+                                        color: '#f87171',
+                                        width: '36px',
+                                        height: '36px',
+                                        borderRadius: '50%',
+                                        cursor: 'pointer',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        flexShrink: 0,
+                                        transition: 'all 0.2s ease'
+                                    }}
+                                    onMouseEnter={(e) => {
+                                        e.currentTarget.style.background = 'rgba(239, 68, 68, 0.3)';
+                                        e.currentTarget.style.transform = 'scale(1.08)';
+                                    }}
+                                    onMouseLeave={(e) => {
+                                        e.currentTarget.style.background = 'rgba(239, 68, 68, 0.15)';
+                                        e.currentTarget.style.transform = 'scale(1)';
+                                    }}
+                                >
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                                </button>
+                            )}
+                        </div>
+
+                        <div className="rating-section" style={{ marginTop: '0.65rem', padding: '0.6rem 0.85rem', background: 'rgba(255,255,255,0.02)', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <span style={{ fontWeight: 600, fontSize: '0.82rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)' }}>
+                                Rating <span style={{ fontSize: '0.72rem', opacity: 0.6, fontWeight: 400, textTransform: 'none' }}>(Keys 1-5)</span>
+                            </span>
+                            <div className="rating-stars" style={{ display: 'flex', gap: '4px' }}>
+                                {[1, 2, 3, 4, 5].map(star => (
+                                    <div key={star} onClick={() => setRating(star)} style={{ cursor: 'pointer' }}>
+                                        <svg className={`star-icon ${star <= rating ? 'filled' : ''}`} viewBox="0 0 24 24" width="22" height="22" fill={star <= rating ? '#f59e0b' : 'none'} stroke={star <= rating ? '#f59e0b' : 'currentColor'} style={{ transition: 'transform 0.15s ease-in-out' }} onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.25)'} onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}>
+                                            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+                                        </svg>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
                     </div>
                     
                     <div className="modal-tags-section" style={{ background: 'rgba(255,255,255,0.02)', padding: '1rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.06)', marginTop: 0 }}>
@@ -209,19 +290,6 @@ const ImageModal = ({
                             activeColor="#16a34a" 
                             onToggleTag={(t) => toggleSecondaryTag ? toggleSecondaryTag(t) : null} 
                         />
-                    </div>
-
-                    <div className="rating-section" style={{ marginTop: '1rem', padding: '0.85rem 1rem', background: 'rgba(255,255,255,0.02)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
-                        <span style={{ fontWeight: 600, fontSize: '0.82rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)' }}>Rating</span>
-                        <div className="rating-stars" style={{ display: 'flex', gap: '4px' }}>
-                            {[1, 2, 3, 4, 5].map(star => (
-                                <div key={star} onClick={() => setRating(star)} style={{ cursor: 'pointer' }}>
-                                    <svg className={`star-icon ${star <= rating ? 'filled' : ''}`} viewBox="0 0 24 24" width="24" height="24" fill={star <= rating ? '#f59e0b' : 'none'} stroke={star <= rating ? '#f59e0b' : 'currentColor'} style={{ transition: 'transform 0.15s ease-in-out' }} onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.25)'} onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}>
-                                        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
-                                    </svg>
-                                </div>
-                            ))}
-                        </div>
                     </div>
 
                     <div className="viewer-bookmarks-section" style={{ marginTop: 0, padding: '0.85rem 1rem', background: 'rgba(255,255,255,0.02)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.06)', marginBottom: '1rem' }}>

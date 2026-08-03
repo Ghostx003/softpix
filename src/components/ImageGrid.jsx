@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef, memo } from 'react';
+import ContextMenu from './ContextMenu';
+import { copyImageToClipboard } from '../utils/copyImage';
 
 // Shared Intersection Observers and Blob URL Cache for massive performance gains
 const visibilityCallbacks = new WeakMap();
@@ -31,11 +33,17 @@ const getPlayObserver = () => {
     return playObserver;
 };
 
-const GridItem = memo(({ item, index, openModal, togglePin, deleteImage, isPinned, isGlobalMute, isPlayAll }) => {
+const GridItem = memo(({ item, index, openModal, togglePin, deleteImage, isPinned, isGlobalMute, isPlayAll, imageRatings, setRatingForItem, onRightClick }) => {
     const [mediaUrl, setMediaUrl] = useState('');
     const [isVisible, setIsVisible] = useState(false);
     const [isInViewport, setIsInViewport] = useState(false);
     const [isHovered, setIsHovered] = useState(false);
+
+    const handleContextMenu = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onRightClick(e, item, isPinned, mediaUrl, imageRatings ? (imageRatings[item.name] || 0) : 0);
+    };
     
     const containerRef = useRef(null);
     const videoRef = useRef(null);
@@ -45,6 +53,30 @@ const GridItem = memo(({ item, index, openModal, togglePin, deleteImage, isPinne
     const itemHandle = item.handle;
     const itemUrl = item.url;
     const isVideo = item.isVideo;
+    const itemRating = imageRatings ? (imageRatings[item.name] || 0) : 0;
+
+    // Hotkey rating on hover
+    useEffect(() => {
+        if (!isHovered) return;
+        const handleKeyDown = (e) => {
+            const activeEl = document.activeElement;
+            const isInputFocused = activeEl && (
+                activeEl.tagName === 'INPUT' || 
+                activeEl.tagName === 'TEXTAREA' || 
+                activeEl.isContentEditable
+            );
+            if (isInputFocused) return;
+            const num = parseInt(e.key, 10);
+            if (!isNaN(num) && num >= 1 && num <= 5 && setRatingForItem) {
+                e.preventDefault();
+                e.stopPropagation();
+                const newRating = itemRating === num ? 0 : num;
+                setRatingForItem(item.name, newRating);
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [isHovered, itemRating, item.name, setRatingForItem]);
 
     // 1. Intersection Observer Logic (Asset Loading)
     useEffect(() => {
@@ -163,7 +195,7 @@ const GridItem = memo(({ item, index, openModal, togglePin, deleteImage, isPinne
     }, [isHovered, isPlayAll, isInViewport, isGlobalMute, isVisible, mediaUrl, isVideo]);
 
     return (
-        <div ref={containerRef} className="pin-container" onClick={() => openModal(index)} onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave}>
+        <div ref={containerRef} className="pin-container" onClick={() => openModal(index)} onContextMenu={handleContextMenu} onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave}>
             {isVisible && mediaUrl ? (
                 <>
                     {item.isVideo ? (
@@ -172,6 +204,14 @@ const GridItem = memo(({ item, index, openModal, togglePin, deleteImage, isPinne
                         <img src={mediaUrl} alt={item.name} loading="lazy" />
                     )}
                     {item.isVideo && <div className="video-indicator">VIDEO</div>}
+                    {itemRating > 0 && (
+                        <div className="grid-rating-badge" title={`Rated ${itemRating} star${itemRating > 1 ? 's' : ''}`}>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="#f59e0b" stroke="#f59e0b">
+                                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+                            </svg>
+                            <span>{itemRating}</span>
+                        </div>
+                    )}
                     
                     <button className={`pin-btn ${isPinned ? 'active' : ''}`} title="Pin item" onClick={(e) => { e.stopPropagation(); togglePin(item.name); }}>
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15.05 3.55L12 6.6L8.95 3.55C7.99 2.59 6.51 2.59 5.55 3.55C4.59 4.51 4.59 5.99 5.55 6.95L8.38 9.78C7.6 10.56 7.12 11.22 7 12H12V21L13 22L14 21V12H17C16.88 11.22 16.4 10.56 15.62 9.78L18.45 6.95C19.41 5.99 19.41 4.51 18.45 3.55C17.49 2.59 16.01 2.59 15.05 3.55Z"></path></svg>
@@ -179,10 +219,10 @@ const GridItem = memo(({ item, index, openModal, togglePin, deleteImage, isPinne
                     <button className="delete-btn" title="Remove from gallery" onClick={(e) => { e.stopPropagation(); deleteImage(item); }}>
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
                     </button>
+
                 </>
             ) : (
                 <div style={{ width: '100%', height: '100%', background: 'rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    {/* Optional: Add a subtle loading spinner or icon here if desired */}
                 </div>
             )}
         </div>
@@ -194,12 +234,30 @@ const GridItem = memo(({ item, index, openModal, togglePin, deleteImage, isPinne
         prevProps.index === nextProps.index &&
         prevProps.isPinned === nextProps.isPinned &&
         prevProps.isGlobalMute === nextProps.isGlobalMute &&
-        prevProps.isPlayAll === nextProps.isPlayAll
+        prevProps.isPlayAll === nextProps.isPlayAll &&
+        (prevProps.imageRatings ? prevProps.imageRatings[prevProps.item.name] : undefined) === (nextProps.imageRatings ? nextProps.imageRatings[nextProps.item.name] : undefined)
     );
 });
 
-const ImageGrid = ({ displayedItems, openModal, togglePin, deleteImage, pinnedImages, isGlobalMute, columnCount, isPrompting, resumeSession, resumeFolderName, isPlayAll }) => {
-    
+const ImageGrid = ({ displayedItems, openModal, togglePin, deleteImage, pinnedImages, isGlobalMute, columnCount, isPrompting, resumeSession, resumeFolderName, isPlayAll, imageRatings, setRatingForItem }) => {
+    const [contextMenuState, setContextMenuState] = useState(null);
+
+    const handleGridItemRightClick = (e, item, isPinned, mediaUrl, itemRating) => {
+        setContextMenuState(prev => {
+            if (prev) {
+                const dist = Math.hypot(e.clientX - prev.x, e.clientY - prev.y);
+                if (dist < 30) return null;
+            }
+            return {
+                x: e.clientX,
+                y: e.clientY,
+                item: { ...item, url: mediaUrl },
+                isPinned,
+                itemRating
+            };
+        });
+    };
+
     if (isPrompting) {
         return (
             <div id="resume-state" style={{ display: 'flex' }}>
@@ -239,8 +297,26 @@ const ImageGrid = ({ displayedItems, openModal, togglePin, deleteImage, pinnedIm
                     isPinned={pinnedImages.includes(item.name)}
                     isGlobalMute={isGlobalMute}
                     isPlayAll={isPlayAll}
+                    imageRatings={imageRatings}
+                    setRatingForItem={setRatingForItem}
+                    onRightClick={handleGridItemRightClick}
                 />
             ))}
+
+            {contextMenuState && (
+                <ContextMenu
+                    x={contextMenuState.x}
+                    y={contextMenuState.y}
+                    item={contextMenuState.item}
+                    onClose={() => setContextMenuState(null)}
+                    onCopy={(itemToCopy) => copyImageToClipboard(itemToCopy)}
+                    onPin={togglePin}
+                    onDelete={() => deleteImage(contextMenuState.item)}
+                    onRate={setRatingForItem}
+                    isPinned={contextMenuState.isPinned}
+                    rating={contextMenuState.itemRating}
+                />
+            )}
         </div>
     );
 };

@@ -8,6 +8,9 @@ const TransitionManager = ({
     isGlobalMute,
     resumeTimes,
     setResumeTime,
+    onNext,
+    isLoopEnabled,
+    toggleLoop,
     tags,
     secondaryTags = {},
     bookmarks = {},
@@ -23,7 +26,10 @@ const TransitionManager = ({
     userAvatar,
     ratings,
     setRating,
-    trackPopularity
+    trackPopularity,
+    togglePin,
+    deleteImage,
+    pinnedImages = []
 }) => {
     const [currentItem, setCurrentItem] = useState(null);
     const [currentMediaUrl, setCurrentMediaUrl] = useState(null);
@@ -108,6 +114,9 @@ const TransitionManager = ({
                 isGlobalMute={isGlobalMute}
                 resumeTime={resumeTimes[currentItem.name] || 0}
                 setResumeTime={setResumeTime}
+                onNext={onNext}
+                isLoopEnabled={isLoopEnabled}
+                toggleLoop={toggleLoop}
                 tags={tags[currentItem.name] || []}
                 secondaryTags={secondaryTags[currentItem.name] || []}
                 bookmarks={bookmarks[currentItem.name] || []}
@@ -124,6 +133,9 @@ const TransitionManager = ({
                 rating={ratings[currentItem.name] || 0}
                 setRating={setRating}
                 trackPopularity={trackPopularity}
+                togglePin={togglePin}
+                deleteImage={deleteImage}
+                isPinned={pinnedImages.includes(currentItem.name) || pinnedImages.includes(currentItem.id)}
             />
         </div>
     );

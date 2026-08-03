@@ -15,7 +15,8 @@ const ScrollFeedView = ({
     displayedItems, uniqueTags, allCategories, customCategories, setCustomCategories, imageTags, setImageTags, imageSecondaryTags = {}, setImageSecondaryTags, imageBookmarks = {}, addBookmarkForItem, deleteBookmarkForItem, isGlobalMute, resumeTimes, setResumeTime,
     imageComments, addCommentForItem, deleteCommentForItem, userName, userAvatar,
     imageRatings, setRatingForItem, trackPopularity, toggleTagForItem, toggleSecondaryTagForItem,
-    shuffleMenuOpen, setShuffleMenuOpen
+    shuffleMenuOpen, setShuffleMenuOpen, togglePin, deleteImage, pinnedImages = [],
+    isLoopEnabled = true, toggleLoop
 }) => {
     const [mode, setMode] = useState('category');
     const [selectedCategory, setSelectedCategory] = useState('Uncategorized');
@@ -24,13 +25,23 @@ const ScrollFeedView = ({
     const [newCategoryName, setNewCategoryName] = useState('');
     
     // New Feature States
-    const [isSidebarCollapsed, setIsSidebarCollapsed] = useLocalStorage('scrollSidebarCollapsed', false);
+    const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
     const [selectedShuffleCategories, setSelectedShuffleCategories] = useState([]);
     const [isShuffleModeActive, setIsShuffleModeActive] = useState(false);
     const [currentShuffleMode, setCurrentShuffleMode] = useState(null);
     const [shuffledPlaylist, setShuffledPlaylist] = useState([]);
     const [toastMessage, setToastMessage] = useState(null);
     const [categoryToDelete, setCategoryToDelete] = useState(null);
+    const lastSeekTime = useRef(0);
+
+    // Ensure theater-mode is cleared and sidebar is expanded by default
+    useEffect(() => {
+        setIsSidebarCollapsed(false);
+        try { localStorage.removeItem('scrollSidebarCollapsed'); } catch (e) {}
+        document.body.classList.remove('theater-mode', 'theater-sidebar-open');
+        const app = document.querySelector('.app-container');
+        if (app) app.classList.remove('theater-mode', 'theater-sidebar-open');
+    }, []);
 
     const showToast = (message) => {
         setToastMessage(message);
@@ -88,12 +99,21 @@ const ScrollFeedView = ({
         setShuffleMenuOpen(false);
     };
 
+    const [randomFeedPlaylist, setRandomFeedPlaylist] = useState([]);
+
+    // Initialize stable random playlist when entering random mode or when displayedItems count changes
+    useEffect(() => {
+        if (mode === 'random') {
+            setRandomFeedPlaylist(shuffleArray(displayedItems));
+        }
+    }, [mode, displayedItems.length]);
+
     const feedItems = useMemo(() => {
         if (isShuffleModeActive) {
             return shuffledPlaylist;
         }
         if (mode === 'random') {
-            return [...displayedItems].sort(() => 0.5 - Math.random());
+            return randomFeedPlaylist.length > 0 ? randomFeedPlaylist : displayedItems;
         } else if (mode === 'category') {
             if (selectedCategory === 'Uncategorized') {
                 return displayedItems.filter(item => {
@@ -109,7 +129,9 @@ const ScrollFeedView = ({
             });
         }
         return [];
-    }, [mode, selectedCategory, displayedItems, imageTags, imageSecondaryTags, isShuffleModeActive, shuffledPlaylist]);
+    }, [mode, selectedCategory, displayedItems, imageTags, imageSecondaryTags, isShuffleModeActive, shuffledPlaylist, randomFeedPlaylist]);
+
+    const activeItem = feedItems[activeIndex] || null;
 
     useEffect(() => {
         if (feedItems.length > 0 && activeIndex >= feedItems.length) {
@@ -208,49 +230,88 @@ const ScrollFeedView = ({
         });
     }, [allCategories, displayedItems, imageTags, imageSecondaryTags]);
 
+    const advanceFeed = (direction) => {
+        if (direction > 0) {
+            if (isShuffleModeActive && activeIndex >= feedItems.length - 1) {
+                // Reshuffle and start over seamlessly
+                setShuffledPlaylist(prev => shuffleArray(prev));
+                setActiveIndex(0);
+            } else if (mode === 'category' && activeIndex >= feedItems.length - 1) {
+                const currentIndex = sortedCategories.indexOf(selectedCategory);
+                let nextCategory = null;
+                for (let i = currentIndex + 1; i < sortedCategories.length; i++) {
+                    const candidate = sortedCategories[i];
+                    
+                    // If user has explicitly checked categories, only auto-advance into those
+                    if (selectedShuffleCategories.length > 0 && !selectedShuffleCategories.includes(candidate)) {
+                        continue;
+                    }
+                    
+                    if (getCategoryCount(candidate) > 0) {
+                        nextCategory = candidate;
+                        break;
+                    }
+                }
+                if (nextCategory) {
+                    setSelectedCategory(nextCategory);
+                    setActiveIndex(0);
+                }
+            } else {
+                setActiveIndex(prev => Math.min(prev + 1, feedItems.length - 1));
+            }
+        } else {
+            setActiveIndex(prev => Math.max(prev - 1, 0));
+        }
+    };
+
     // Wheel and Keyboard Event Interception for Media Navigation
     useEffect(() => {
         let isThrottled = false;
-        
-        const advanceFeed = (direction) => {
-            if (direction > 0) {
-                if (isShuffleModeActive && activeIndex >= feedItems.length - 1) {
-                    // Reshuffle and start over seamlessly
-                    setShuffledPlaylist(prev => shuffleArray(prev));
-                    setActiveIndex(0);
-                } else if (mode === 'category' && activeIndex >= feedItems.length - 1) {
-                    const currentIndex = sortedCategories.indexOf(selectedCategory);
-                    let nextCategory = null;
-                    for (let i = currentIndex + 1; i < sortedCategories.length; i++) {
-                        const candidate = sortedCategories[i];
-                        
-                        // If user has explicitly checked categories, only auto-advance into those
-                        if (selectedShuffleCategories.length > 0 && !selectedShuffleCategories.includes(candidate)) {
-                            continue;
-                        }
-                        
-                        if (getCategoryCount(candidate) > 0) {
-                            nextCategory = candidate;
-                            break;
-                        }
-                    }
-                    if (nextCategory) {
-                        setSelectedCategory(nextCategory);
-                        setActiveIndex(0);
-                    }
-                } else {
-                    setActiveIndex(prev => Math.min(prev + 1, feedItems.length - 1));
-                }
-            } else {
-                setActiveIndex(prev => Math.max(prev - 1, 0));
-            }
-        };
 
         const handleWheel = (e) => {
-            if (isThrottled) return;
             // Ignore if the user is scrolling inside the sidebar or metadata panel
-            if (e.target.closest('.category-sidebar') || e.target.closest('.viewer-metadata-panel')) return;
+            if (e.target.closest('.category-sidebar') || 
+                e.target.closest('.viewer-metadata-panel') || 
+                e.target.closest('.modal-details-container') || 
+                e.target.closest('.sidebar') || 
+                e.target.closest('.metadata-panel')) return;
             
+            // Determine active video element anywhere on page
+            const mediaContainer = e.target.closest('.viewer-media-container') || e.target.closest('.landscape-viewer') || e.target.closest('.portrait-viewer') || document.querySelector('.viewer-media-container');
+            if (mediaContainer && e.clientX > mediaContainer.getBoundingClientRect().right) return;
+
+            const videoEl = mediaContainer ? (mediaContainer.querySelector('video') || document.querySelector('video')) : document.querySelector('video');
+            
+            let isLeftHalf = false;
+            if (mediaContainer) {
+                const rect = mediaContainer.getBoundingClientRect();
+                isLeftHalf = e.clientX < (rect.left + rect.width / 2);
+            } else {
+                isLeftHalf = e.clientX < (window.innerWidth / 2);
+            }
+
+            if (isLeftHalf && videoEl) {
+                e.preventDefault();
+                e.stopPropagation();
+
+                const now = Date.now();
+                if (now - lastSeekTime.current < 120) return;
+                lastSeekTime.current = now;
+
+                if (Math.abs(e.deltaY) > 5) {
+                    if (e.deltaY < 0) {
+                        // Scroll UP -> Move FORWARD +10 seconds
+                        videoEl.currentTime = Math.min(videoEl.duration || Infinity, videoEl.currentTime + 10);
+                    } else {
+                        // Scroll DOWN -> Move BACKWARD -10 seconds
+                        videoEl.currentTime = Math.max(0, videoEl.currentTime - 10);
+                    }
+                }
+                return;
+            }
+
+            // Right 50%: scroll mousewheel to advance to next/prev video
+            if (isThrottled) return;
             if (Math.abs(e.deltaY) < 30) return; // filter tiny trackpad movements
             
             advanceFeed(e.deltaY > 0 ? 1 : -1);
@@ -262,7 +323,30 @@ const ScrollFeedView = ({
 
         const handleKeyDown = (e) => {
             // Ignore if user is typing in an input field
-            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+            const activeEl = document.activeElement;
+            const isInputFocused = activeEl && (
+                activeEl.tagName === 'INPUT' || 
+                activeEl.tagName === 'TEXTAREA' || 
+                activeEl.isContentEditable
+            );
+            if (isInputFocused) return;
+
+            const num = parseInt(e.key, 10);
+            if (!isNaN(num) && num >= 1 && num <= 5) {
+                if (activeItem) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const currentRating = imageRatings[activeItem.name] || 0;
+                    const newRating = currentRating === num ? 0 : num;
+                    setRatingForItem(activeItem.name, newRating);
+                    if (newRating > 0) {
+                        showToast(`${'⭐'.repeat(newRating)} Rated ${newRating} Star${newRating > 1 ? 's' : ''}`);
+                    } else {
+                        showToast(`Rating Cleared`);
+                    }
+                }
+                return;
+            }
 
             if (e.key === 'PageDown') {
                 e.preventDefault();
@@ -284,20 +368,20 @@ const ScrollFeedView = ({
                     setActiveIndex(0);
                     showToast(`Now playing videos from category: ${prevCat}`);
                 }
-            } else if (e.key === 'ArrowDown') {
+            } else if (e.key === 'n' || e.key === 'N' || e.key === 'ArrowDown') {
                 e.preventDefault();
                 advanceFeed(1);
-            } else if (e.key === 'ArrowUp') {
+            } else if (e.key === 'p' || e.key === 'P' || e.key === 'ArrowUp') {
                 e.preventDefault();
                 advanceFeed(-1);
-            } else if (e.key === '/') {
-                e.preventDefault();
-                if (document.body.classList.contains('theater-mode')) {
-                    document.body.classList.toggle('theater-sidebar-open');
-                    const app = document.querySelector('.app-container');
-                    if (app) app.classList.toggle('theater-sidebar-open');
+            } else if (e.key === 'l' || e.key === 'L') {
+                if (toggleLoop) toggleLoop();
+                showToast(!isLoopEnabled ? '🔁 Video Loop Enabled' : '➡️ Video Loop Disabled (Auto-Play Next)');
+            } else if (e.key === 's' || e.key === 'S') {
+                if (isShuffleModeActive) {
+                    stopShuffle();
                 } else {
-                    setIsSidebarCollapsed(prev => !prev);
+                    startShuffle('all');
                 }
             }
         };
@@ -309,7 +393,7 @@ const ScrollFeedView = ({
             window.removeEventListener('wheel', handleWheel, { capture: true });
             window.removeEventListener('keydown', handleKeyDown, { capture: true });
         };
-    }, [feedItems.length, isShuffleModeActive, activeIndex, mode, selectedCategory, sortedCategories, displayedItems, imageTags, selectedShuffleCategories]);
+    }, [feedItems, activeIndex, isShuffleModeActive, mode, selectedCategory, sortedCategories, displayedItems, imageTags, selectedShuffleCategories, imageRatings, setRatingForItem, activeItem]);
 
     if (!mode) {
         return (
@@ -320,10 +404,8 @@ const ScrollFeedView = ({
         );
     }
 
-    const activeItem = feedItems[activeIndex] || null;
-
     return (
-        <div className="media-controller-layout" style={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
+        <div className="media-controller-layout" style={{ display: 'flex', height: '100%', overflow: 'hidden', paddingTop: '70px', boxSizing: 'border-box' }}>
             <style>
                 {`
                 @keyframes slideDownFade {
@@ -382,10 +464,10 @@ const ScrollFeedView = ({
                 </div>
             )}
 
-            {(mode === 'category' || true) && (
+            {true && (
                 <>
                     {isSidebarCollapsed && (
-                        <div className="category-sidebar-collapsed" style={{ width: '60px', background: 'var(--bg-color)', borderRight: '1px solid rgba(255,255,255,0.1)', display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: '20px' }}>
+                        <div className="category-sidebar-collapsed" style={{ width: '60px', background: 'var(--bg-color)', borderRight: '1px solid rgba(255,255,255,0.1)', display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: '20px', zIndex: 20 }}>
                             <button 
                                 onClick={() => {
                                     setIsSidebarCollapsed(false);
@@ -395,16 +477,33 @@ const ScrollFeedView = ({
                                         if (app) app.classList.add('theater-sidebar-open');
                                     }
                                 }} 
-                                style={{ background: 'transparent', border: 'none', color: 'var(--text-main)', cursor: 'pointer', padding: '10px' }} 
-                                title="Expand Categories"
+                                style={{ 
+                                    background: 'rgba(59, 130, 246, 0.25)', 
+                                    border: '1px solid rgba(59, 130, 246, 0.5)', 
+                                    borderRadius: '10px', 
+                                    color: '#ffffff', 
+                                    cursor: 'pointer', 
+                                    padding: '10px', 
+                                    display: 'flex', 
+                                    alignItems: 'center', 
+                                    justifyContent: 'center',
+                                    boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)'
+                                }} 
+                                title="Expand Categories Sidebar (Hamburger Menu)"
                             >
-                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                    <line x1="3" y1="12" x2="21" y2="12"></line>
+                                    <line x1="3" y1="6" x2="21" y2="6"></line>
+                                    <line x1="3" y1="18" x2="21" y2="18"></line>
+                                </svg>
                             </button>
                         </div>
                     )}
-                    <div className="category-sidebar" style={{ width: isSidebarCollapsed ? '0px' : '300px', minWidth: isSidebarCollapsed ? '0px' : '300px', display: (mode === 'category' && !isSidebarCollapsed) ? 'flex' : 'none', background: 'var(--bg-color)', borderRight: '1px solid rgba(255,255,255,0.1)', overflowY: 'auto', flexDirection: 'column' }}>
-                        <h3 style={{ padding: '20px', margin: 0, position: 'sticky', top: 0, background: '#000', zIndex: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            Categories
+                    <div className="category-sidebar" style={{ width: isSidebarCollapsed ? '0px' : '300px', minWidth: isSidebarCollapsed ? '0px' : '300px', display: !isSidebarCollapsed ? 'flex' : 'none', background: 'var(--bg-color)', borderRight: '1px solid rgba(255,255,255,0.1)', overflowY: 'auto', flexDirection: 'column' }}>
+                        <h3 style={{ padding: '16px 20px', margin: 0, position: 'sticky', top: 0, background: '#090d16', zIndex: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '1.1rem', fontWeight: 700 }}>
+                                📁 Categories
+                            </span>
                             <button 
                                 onClick={() => {
                                     setIsSidebarCollapsed(true);
@@ -412,10 +511,30 @@ const ScrollFeedView = ({
                                     const app = document.querySelector('.app-container');
                                     if (app) app.classList.remove('theater-sidebar-open');
                                 }} 
-                                style={{ background: 'transparent', border: 'none', color: 'var(--text-main)', cursor: 'pointer', padding: '5px' }} 
-                                title="Collapse Sidebar"
+                                style={{ 
+                                    background: 'rgba(255, 255, 255, 0.08)', 
+                                    border: '1px solid rgba(255, 255, 255, 0.15)', 
+                                    borderRadius: '8px', 
+                                    color: '#ffffff', 
+                                    cursor: 'pointer', 
+                                    padding: '8px 12px', 
+                                    display: 'flex', 
+                                    alignItems: 'center', 
+                                    gap: '8px',
+                                    fontSize: '0.85rem',
+                                    fontWeight: 600,
+                                    transition: 'all 0.15s ease'
+                                }} 
+                                title="Minimize Categories Sidebar (Hamburger Menu)"
+                                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(59, 130, 246, 0.3)'; e.currentTarget.style.borderColor = '#3b82f6'; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)'; e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.15)'; }}
                             >
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                    <line x1="3" y1="12" x2="21" y2="12"></line>
+                                    <line x1="3" y1="6" x2="21" y2="6"></line>
+                                    <line x1="3" y1="18" x2="21" y2="18"></line>
+                                </svg>
+                                <span>Minimize</span>
                             </button>
                         </h3>
                         <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
@@ -526,6 +645,9 @@ const ScrollFeedView = ({
                         isGlobalMute={isGlobalMute}
                         resumeTimes={resumeTimes}
                         setResumeTime={setResumeTime}
+                        onNext={() => advanceFeed(1)}
+                        isLoopEnabled={isLoopEnabled}
+                        toggleLoop={toggleLoop}
                         tags={imageTags}
                         secondaryTags={imageSecondaryTags}
                         bookmarks={imageBookmarks}
@@ -542,6 +664,9 @@ const ScrollFeedView = ({
                         ratings={imageRatings}
                         setRating={setRatingForItem}
                         trackPopularity={trackPopularity}
+                        togglePin={togglePin}
+                        deleteImage={deleteImage}
+                        pinnedImages={pinnedImages}
                     />
                 )}
             </div>

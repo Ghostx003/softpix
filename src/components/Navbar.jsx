@@ -20,7 +20,7 @@ const Navbar = ({
         <div className="navbar">
             <div className="logo" onClick={() => setCurrentView('grid')} style={{ cursor: 'pointer' }}>Softpix</div>
             <div className="nav-controls">
-                <button className="btn-icon" title={isGlobalMute ? "Current: Muted (Click to Unmute)" : "Current: Sound On (Click to Mute)"} onClick={toggleGlobalMute}>
+                <button className="btn-icon" title={isGlobalMute ? "Current: Muted (Click or press 'M' to Unmute)" : "Current: Sound On (Click or press 'M' to Mute)"} onClick={toggleGlobalMute}>
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         {isGlobalMute ? (
                             <>

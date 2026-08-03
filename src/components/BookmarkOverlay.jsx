@@ -1,11 +1,20 @@
 import React, { useState, useEffect, useRef } from 'react';
+import ContextMenu from './ContextMenu';
+import { copyImageToClipboard } from '../utils/copyImage';
 
 export const BookmarkOverlay = ({
     item,
     videoRef,
     bookmarks = [],
     addBookmark,
-    deleteBookmark
+    deleteBookmark,
+    togglePin,
+    deleteImage,
+    rating,
+    setRating,
+    isPinned,
+    isLoopEnabled = true,
+    toggleLoop
 }) => {
     const [isPrompting, setIsPrompting] = useState(false);
     const [promptTime, setPromptTime] = useState(0);
@@ -18,6 +27,19 @@ export const BookmarkOverlay = ({
     const [isTheaterMode, setIsTheaterMode] = useState(false);
     const [isTheaterSidebarOpen, setIsTheaterSidebarOpen] = useState(false);
     const [areControlsVisible, setAreControlsVisible] = useState(true);
+    const [contextMenuPos, setContextMenuPos] = useState(null);
+    
+    const handleContextMenu = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setContextMenuPos(prev => {
+            if (prev) {
+                const dist = Math.hypot(e.clientX - prev.x, e.clientY - prev.y);
+                if (dist < 30) return null;
+            }
+            return { x: e.clientX, y: e.clientY };
+        });
+    };
     
     // Hover & Delete 3-second timer state
     const [hoveredBookmarkId, setHoveredBookmarkId] = useState(null);
@@ -29,13 +51,13 @@ export const BookmarkOverlay = ({
     const hoverTimerRef = useRef(null);
     const mouseIdleTimerRef = useRef(null);
 
-    // Controls Sleep / Auto-hide on Mouse Idle Timer (3s)
+    // Controls Sleep / Auto-hide on Mouse Idle Timer (4s)
     const handleMouseMove = () => {
         setAreControlsVisible(true);
         if (mouseIdleTimerRef.current) clearTimeout(mouseIdleTimerRef.current);
         mouseIdleTimerRef.current = setTimeout(() => {
             setAreControlsVisible(false);
-        }, 3000);
+        }, 4000);
     };
 
     // Track video time and duration
@@ -169,6 +191,18 @@ export const BookmarkOverlay = ({
         }
     };
 
+    const seekBackward60 = () => {
+        if (videoRef?.current) {
+            videoRef.current.currentTime = Math.max(0, videoRef.current.currentTime - 60);
+        }
+    };
+
+    const seekForward60 = () => {
+        if (videoRef?.current) {
+            videoRef.current.currentTime = Math.min(duration || Infinity, videoRef.current.currentTime + 60);
+        }
+    };
+
     const showToast = (msg) => {
         if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
         setToastMessage(msg);
@@ -201,6 +235,42 @@ export const BookmarkOverlay = ({
         return () => window.removeEventListener('keydown', handlePromptKey, true);
     }, [isPrompting, promptTime]);
 
+    const cycleBookmarks = (isBackward = false) => {
+        if (!bookmarks || bookmarks.length === 0) {
+            showToast('No bookmarks saved');
+            return;
+        }
+        if (!videoRef?.current) return;
+
+        // Sort bookmarks chronologically by timestamp
+        const sorted = [...bookmarks].sort((a, b) => (a.time || 0) - (b.time || 0));
+        const curTime = videoRef.current.currentTime;
+
+        let targetIndex = 0;
+        if (!isBackward) {
+            // Find first bookmark strictly after current playback time (+0.5s tolerance)
+            const nextIdx = sorted.findIndex(b => (b.time || 0) > curTime + 0.5);
+            targetIndex = nextIdx !== -1 ? nextIdx : 0;
+        } else {
+            // Find last bookmark strictly before current playback time (-0.5s tolerance)
+            let prevIdx = -1;
+            for (let i = sorted.length - 1; i >= 0; i--) {
+                if ((sorted[i].time || 0) < curTime - 0.5) {
+                    prevIdx = i;
+                    break;
+                }
+            }
+            targetIndex = prevIdx !== -1 ? prevIdx : sorted.length - 1;
+        }
+
+        const targetBookmark = sorted[targetIndex];
+        videoRef.current.currentTime = targetBookmark.time || 0;
+
+        const timeStr = formatTime(targetBookmark.time || 0);
+        const nameStr = targetBookmark.name ? `"${targetBookmark.name}"` : `Bookmark ${targetIndex + 1}`;
+        showToast(`📌 ${nameStr} (${timeStr}) [${targetIndex + 1}/${sorted.length}]`);
+    };
+
     // Swapped hotkeys: F key triggers Theater Mode, T key triggers standard Fullscreen
     useEffect(() => {
         const handleKeyDown = (e) => {
@@ -216,36 +286,53 @@ export const BookmarkOverlay = ({
             if (e.key === 'ArrowLeft') {
                 e.preventDefault();
                 e.stopPropagation();
-                seekBackward10();
+                if (e.ctrlKey || e.metaKey) {
+                    seekBackward60();
+                } else {
+                    seekBackward10();
+                }
             } else if (e.key === 'ArrowRight') {
                 e.preventDefault();
                 e.stopPropagation();
-                seekForward10();
+                if (e.ctrlKey || e.metaKey) {
+                    seekForward60();
+                } else {
+                    seekForward10();
+                }
             } else if (e.key === 'z' || e.key === 'Z') {
                 e.preventDefault();
                 e.stopPropagation();
-                const curTime = videoRef?.current ? videoRef.current.currentTime : 0;
-                setPromptTime(curTime);
-                setInputName('');
-                setIsPrompting(true);
+                if (e.ctrlKey || e.metaKey) {
+                    cycleBookmarks(e.shiftKey);
+                } else {
+                    const curTime = videoRef?.current ? videoRef.current.currentTime : 0;
+                    setPromptTime(curTime);
+                    setInputName('');
+                    setIsPrompting(true);
+                }
             } else if (e.key === 'f' || e.key === 'F') {
                 e.preventDefault();
                 e.stopPropagation();
-                toggleTheaterMode();
+                toggleFullscreen();
             } else if (e.key === 't' || e.key === 'T') {
                 e.preventDefault();
                 e.stopPropagation();
-                toggleFullscreen();
-            } else if (e.key === '/') {
+                toggleTheaterMode();
+            } else if (e.key === 'l' || e.key === 'L') {
                 e.preventDefault();
                 e.stopPropagation();
-                toggleTheaterSidebar();
+                if (toggleLoop) {
+                    toggleLoop();
+                } else if (videoRef?.current) {
+                    videoRef.current.loop = !videoRef.current.loop;
+                }
+                showToast(!isLoopEnabled ? '🔁 Video Loop Enabled' : '➡️ Video Loop Disabled (Auto-Play Next)');
             }
         };
 
         window.addEventListener('keydown', handleKeyDown, true);
         return () => window.removeEventListener('keydown', handleKeyDown, true);
-    }, [isPrompting, videoRef, duration]);
+    }, [isPrompting, videoRef, duration, bookmarks, isLoopEnabled, toggleLoop]);
 
     useEffect(() => {
         if (isPrompting && inputRef.current) {
@@ -320,6 +407,7 @@ export const BookmarkOverlay = ({
             className="media-backdrop-area"
             onClick={handleContainerClick}
             onMouseMove={handleMouseMove}
+            onContextMenu={handleContextMenu}
             style={{ 
                 position: 'absolute', 
                 inset: 0, 
@@ -589,6 +677,20 @@ export const BookmarkOverlay = ({
                         {/* Right Side: Swapped Buttons (Fullscreen button triggers Theater Mode, Theater button triggers standard Fullscreen) */}
                         <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
                             <button 
+                                onClick={() => {
+                                    if (toggleLoop) {
+                                        toggleLoop();
+                                    } else if (videoRef?.current) {
+                                        videoRef.current.loop = !videoRef.current.loop;
+                                    }
+                                    showToast(!isLoopEnabled ? '🔁 Video Loop Enabled' : '➡️ Video Loop Disabled (Auto-Play Next)');
+                                }} 
+                                title={isLoopEnabled ? "Loop Enabled (L)" : "Auto-Play Next (L)"} 
+                                style={{ background: 'none', border: 'none', color: isLoopEnabled ? '#10b981' : '#6b7280', cursor: 'pointer', fontSize: '1rem', padding: 0 }}
+                            >
+                                🔁
+                            </button>
+                            <button 
                                 onClick={toggleFullscreen} 
                                 title="Standard Fullscreen Mode (T)" 
                                 style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: 0 }}
@@ -609,6 +711,21 @@ export const BookmarkOverlay = ({
                     </div>
 
                 </div>
+            )}
+
+            {contextMenuPos && (
+                <ContextMenu
+                    x={contextMenuPos.x}
+                    y={contextMenuPos.y}
+                    item={item}
+                    onClose={() => setContextMenuPos(null)}
+                    onCopy={(itemToCopy) => copyImageToClipboard(itemToCopy, showToast)}
+                    onPin={togglePin}
+                    onDelete={deleteImage ? (() => deleteImage(item)) : undefined}
+                    onRate={setRating}
+                    isPinned={isPinned}
+                    rating={rating}
+                />
             )}
         </div>
     );

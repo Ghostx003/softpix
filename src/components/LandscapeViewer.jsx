@@ -3,16 +3,30 @@ import TagGroup from './TagGroup';
 import BookmarkOverlay from './BookmarkOverlay';
 
 const LandscapeViewer = ({
-    item, mediaUrl, isGlobalMute, resumeTime, setResumeTime,
+    item, mediaUrl, isGlobalMute, resumeTime, setResumeTime, onNext,
+    isLoopEnabled = true, toggleLoop,
     tags, secondaryTags = [], bookmarks = [], addBookmark, deleteBookmark,
     toggleTag, toggleSecondaryTag, availableTags,
     comments, addComment, deleteComment,
     userName, userAvatar,
-    rating, setRating, trackPopularity
+    rating, setRating, trackPopularity,
+    togglePin, deleteImage, isPinned
 }) => {
     const [commentInput, setCommentInput] = useState('');
     const [tagInput, setTagInput] = useState('');
     const videoRef = useRef(null);
+
+    const handleVideoEnded = () => {
+        if (onNext && !isLoopEnabled) {
+            onNext();
+        }
+    };
+
+    useEffect(() => {
+        if (videoRef.current) {
+            videoRef.current.loop = isLoopEnabled;
+        }
+    }, [isLoopEnabled]);
 
     useEffect(() => {
         trackPopularity(item.name);
@@ -61,7 +75,7 @@ const LandscapeViewer = ({
         <div className="landscape-viewer" style={{ width: '100%', height: '100%', display: 'flex', background: 'var(--bg-primary)', overflow: 'hidden', minHeight: 0, minWidth: 0 }}>
             <div className="viewer-media-container" style={{ flex: 3, position: 'relative', background: '#000', display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '2rem', minHeight: 0, minWidth: 0 }}>
                 {item.isVideo ? (
-                    <video ref={videoRef} src={mediaUrl} loop muted={isGlobalMute} style={{ width: '100%', height: '100%', objectFit: 'contain', borderRadius: '8px', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}></video>
+                    <video ref={videoRef} src={mediaUrl} loop={isLoopEnabled} muted={isGlobalMute} onEnded={handleVideoEnded} style={{ width: '100%', height: '100%', objectFit: 'contain', borderRadius: '8px', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}></video>
                 ) : (
                     <img src={mediaUrl} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'contain', borderRadius: '8px', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }} />
                 )}
@@ -72,11 +86,35 @@ const LandscapeViewer = ({
                     bookmarks={bookmarks} 
                     addBookmark={addBookmark} 
                     deleteBookmark={deleteBookmark} 
+                    togglePin={togglePin}
+                    deleteImage={deleteImage}
+                    rating={rating}
+                    setRating={setRating}
+                    isPinned={isPinned}
+                    isLoopEnabled={isLoopEnabled}
+                    toggleLoop={toggleLoop}
                 />
             </div>
             
             <div className="viewer-metadata-panel" style={{ flex: 1, minWidth: '350px', maxWidth: '450px', background: 'var(--bg-secondary)', borderLeft: '1px solid var(--border-primary)', display: 'flex', flexDirection: 'column', padding: '1.5rem', overflowY: 'auto' }}>
-                <h3 style={{ wordWrap: 'break-word', marginTop: 0, marginBottom: '1.2rem', fontSize: '1.15rem', fontWeight: 700, color: 'var(--text-primary)', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '0.75rem' }}>{item.name}</h3>
+                <div style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '0.75rem', marginBottom: '1.2rem' }}>
+                    <h3 style={{ wordBreak: 'break-word', marginTop: 0, marginBottom: '0.65rem', fontSize: '1.15rem', fontWeight: 700, color: 'var(--text-primary)' }}>{item.name}</h3>
+                    
+                    <div className="viewer-rating-section" style={{ padding: '0.6rem 0.85rem', background: 'rgba(255,255,255,0.02)', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <span style={{ fontWeight: 600, fontSize: '0.82rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)' }}>
+                            Rating <span style={{ fontSize: '0.72rem', opacity: 0.6, fontWeight: 400, textTransform: 'none' }}>(Keys 1-5)</span>
+                        </span>
+                        <div style={{ display: 'flex', gap: '4px' }}>
+                            {[1, 2, 3, 4, 5].map(star => (
+                                <div key={star} onClick={() => setRating(item.name, star)} style={{ cursor: 'pointer' }}>
+                                    <svg className={`star-icon ${star <= rating ? 'filled' : ''}`} viewBox="0 0 24 24" width="22" height="22" fill={star <= rating ? '#f59e0b' : 'none'} stroke={star <= rating ? '#f59e0b' : 'currentColor'} style={{ transition: 'transform 0.15s ease-in-out' }} onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.25)'} onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}>
+                                        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+                                    </svg>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
                 
                 <div className="viewer-tags-section" style={{ background: 'rgba(255,255,255,0.02)', padding: '1rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.06)' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.6rem' }}>
@@ -121,19 +159,6 @@ const LandscapeViewer = ({
                         activeColor="#16a34a" 
                         onToggleTag={(t) => toggleSecondaryTag ? toggleSecondaryTag(item.name, t) : null} 
                     />
-                </div>
-
-                <div className="viewer-rating-section" style={{ marginTop: '1rem', padding: '0.85rem 1rem', background: 'rgba(255,255,255,0.02)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <span style={{ fontWeight: 600, fontSize: '0.82rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)' }}>Rating</span>
-                    <div style={{ display: 'flex', gap: '4px' }}>
-                        {[1, 2, 3, 4, 5].map(star => (
-                            <div key={star} onClick={() => setRating(item.name, star)} style={{ cursor: 'pointer' }}>
-                                <svg className={`star-icon ${star <= rating ? 'filled' : ''}`} viewBox="0 0 24 24" width="24" height="24" fill={star <= rating ? '#f59e0b' : 'none'} stroke={star <= rating ? '#f59e0b' : 'currentColor'} style={{ transition: 'transform 0.15s ease-in-out' }} onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.25)'} onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}>
-                                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
-                                </svg>
-                            </div>
-                        ))}
-                    </div>
                 </div>
 
                 <div className="viewer-bookmarks-section" style={{ marginTop: '1rem', padding: '0.85rem 1rem', background: 'rgba(255,255,255,0.02)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.06)' }}>

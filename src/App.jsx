@@ -8,6 +8,7 @@ import ImageModal from './components/ImageModal';
 import NameModal from './components/NameModal';
 import ExportModal from './components/ExportModal';
 import FolderModal from './components/FolderModal';
+import ShortcutsModal from './components/ShortcutsModal';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { useFileSystem } from './hooks/useFileSystem';
 import './index.css';
@@ -34,6 +35,8 @@ function App() {
 
     // --- UI State ---
     const [isGlobalMute, setIsGlobalMute] = useState(true);
+    const [isLoopEnabled, setIsLoopEnabled] = useLocalStorage('isLoopEnabled', true);
+    const toggleLoop = () => setIsLoopEnabled(prev => !prev);
     const [currentTypeFilter, setTypeFilter] = useState('all');
     const [sortBy, setSortBy] = useState('pinned');
     const [activeFilterTags, setActiveFilterTags] = useState([]);
@@ -51,7 +54,18 @@ function App() {
     const [isPlayAll, setIsPlayAll] = useState(false);
     const [shuffledItems, setShuffledItems] = useState(null);
     const [isHeaderVisible, setIsHeaderVisible] = useState(true);
+    const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
+    const shuffleHistoryRef = useRef([]);
+    const shufflePointerRef = useRef(-1);
     const lastBottomShuffleTime = useRef(0);
+
+    const openModalIndex = (idx) => {
+        setModalIndex(idx);
+        if (idx !== -1) {
+            shuffleHistoryRef.current = [idx];
+            shufflePointerRef.current = 0;
+        }
+    };
 
     const handleGridScroll = (e) => {
         const target = e.target;
@@ -106,6 +120,29 @@ function App() {
         document.documentElement.setAttribute('data-accent', currentTheme);
     }, [currentTheme]);
 
+    // --- Global M key shortcut to toggle mute ---
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            const activeEl = document.activeElement;
+            const isInputFocused = activeEl && (
+                activeEl.tagName === 'INPUT' || 
+                activeEl.tagName === 'TEXTAREA' || 
+                activeEl.isContentEditable
+            );
+            if (isInputFocused) return;
+
+            if (e.key === 'm' || e.key === 'M') {
+                e.preventDefault();
+                setIsGlobalMute(prev => !prev);
+            } else if (e.key === '/') {
+                e.preventDefault();
+                setIsShortcutsOpen(prev => !prev);
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, []);
+
     // --- Merge Folder Tags into Image Tags ---
     useEffect(() => {
         if (localFiles.length === 0) return;
@@ -144,6 +181,14 @@ function App() {
         // Filter out deleted items
         items = items.filter(item => !deletedImages.includes(item.name));
 
+        // Deduplicate items by name to prevent duplicate entries
+        const seenNames = new Set();
+        items = items.filter(item => {
+            if (seenNames.has(item.name)) return false;
+            seenNames.add(item.name);
+            return true;
+        });
+
         // 1. Sort
         if (sortBy.startsWith('rating-')) {
             const targetRating = parseInt(sortBy.split('-')[1]);
@@ -161,15 +206,9 @@ function App() {
                 return 0;
             });
         }
-        // 2. Media Type Filter
-        if (currentTypeFilter === 'photo') {
-            items = items.filter(item => !item.isVideo && !item.name.toLowerCase().endsWith('.gif'));
-        } else if (currentTypeFilter === 'video') {
-            items = items.filter(item => item.isVideo || item.name.toLowerCase().endsWith('.gif'));
-        }
 
         return items;
-    }, [localFiles, externalUrls, sortBy, currentTypeFilter, pinnedImages, imageRatings, imagePopularity, deletedImages]);
+    }, [localFiles, externalUrls, sortBy, pinnedImages, imageRatings, imagePopularity, deletedImages]);
 
     const displayedItems = useMemo(() => {
         if (shuffledItems !== null) {
@@ -177,6 +216,14 @@ function App() {
         }
 
         let items = [...baseItems];
+        
+        // Media Type Filter for Grid View
+        if (currentTypeFilter === 'photo') {
+            items = items.filter(item => !item.isVideo && !item.name.toLowerCase().endsWith('.gif'));
+        } else if (currentTypeFilter === 'video') {
+            items = items.filter(item => item.isVideo || item.name.toLowerCase().endsWith('.gif'));
+        }
+
         // Tag Filter for Grid View
         if (activeFilterTags.length > 0) {
             items = items.filter(item => {
@@ -186,7 +233,7 @@ function App() {
             });
         }
         return items;
-    }, [baseItems, activeFilterTags, imageTags, imageSecondaryTags, shuffledItems]);
+    }, [baseItems, activeFilterTags, imageTags, imageSecondaryTags, shuffledItems, currentTypeFilter]);
 
     const uniqueTags = useMemo(() => {
         const allTags = new Set([
@@ -329,15 +376,41 @@ function App() {
     const showNext = () => {
         if (displayedItems.length <= 1) return;
         if (isAutoShuffleOn && activeItem && !pinnedImages.includes(activeItem.name)) {
-            let nextRandomIndex;
-            do { nextRandomIndex = Math.floor(Math.random() * displayedItems.length); } while (nextRandomIndex === modalIndex);
-            setModalIndex(nextRandomIndex);
+            // If user previously went back in history and is now advancing forward, use history
+            if (shufflePointerRef.current < shuffleHistoryRef.current.length - 1) {
+                shufflePointerRef.current += 1;
+                const nextHistIndex = shuffleHistoryRef.current[shufflePointerRef.current];
+                setModalIndex(nextHistIndex);
+            } else {
+                // Otherwise pick a brand new random item and record it in history
+                let nextRandomIndex;
+                do { 
+                    nextRandomIndex = Math.floor(Math.random() * displayedItems.length); 
+                } while (nextRandomIndex === modalIndex && displayedItems.length > 1);
+                
+                shuffleHistoryRef.current.push(nextRandomIndex);
+                shufflePointerRef.current = shuffleHistoryRef.current.length - 1;
+                setModalIndex(nextRandomIndex);
+            }
         } else {
             setModalIndex((modalIndex + 1) % displayedItems.length);
         }
     };
     
-    const showPrev = () => setModalIndex((modalIndex - 1 + displayedItems.length) % displayedItems.length);
+    const showPrev = () => {
+        if (displayedItems.length <= 1) return;
+        if (isAutoShuffleOn) {
+            if (shufflePointerRef.current > 0) {
+                shufflePointerRef.current -= 1;
+                const prevHistIndex = shuffleHistoryRef.current[shufflePointerRef.current];
+                setModalIndex(prevHistIndex);
+            } else {
+                setModalIndex((modalIndex - 1 + displayedItems.length) % displayedItems.length);
+            }
+        } else {
+            setModalIndex((modalIndex - 1 + displayedItems.length) % displayedItems.length);
+        }
+    };
     
     const toggleTagForItem = (name, tag) => {
         const current = imageTags[name] || [];
@@ -476,11 +549,13 @@ function App() {
                 {currentView === 'grid' && (
                     <div onScroll={handleGridScroll} style={{ paddingTop: '125px', paddingLeft: '20px', paddingRight: '20px', paddingBottom: '20px', overflowY: 'auto', height: '100%', boxSizing: 'border-box' }}>
                         <ImageGrid 
-                            displayedItems={displayedItems} openModal={setModalIndex} 
+                            displayedItems={displayedItems} openModal={openModalIndex} 
                             togglePin={togglePin} deleteImage={deleteImage} 
                             pinnedImages={pinnedImages} isGlobalMute={isGlobalMute} columnCount={columnCount}
                             isPrompting={isPrompting} resumeSession={resumeSession} resumeFolderName={pendingHandle?.name}
                             isPlayAll={isPlayAll && modalIndex === -1}
+                            imageRatings={imageRatings}
+                            setRatingForItem={setRatingForItem}
                         />
                     </div>
                 )}
@@ -513,6 +588,11 @@ function App() {
                         toggleSecondaryTagForItem={toggleSecondaryTagForItem}
                         shuffleMenuOpen={scrollShuffleMenuOpen} 
                         setShuffleMenuOpen={setScrollShuffleMenuOpen}
+                        togglePin={togglePin}
+                        deleteImage={deleteImage}
+                        pinnedImages={pinnedImages}
+                        isLoopEnabled={isLoopEnabled}
+                        toggleLoop={toggleLoop}
                     />
                 )}
             </main>
@@ -535,8 +615,13 @@ function App() {
                 availableTags={uniqueTags} toggleTag={toggleTagModal} toggleSecondaryTag={toggleSecondaryTagModal}
                 comments={activeItem ? (imageComments[activeItem.name] || []) : []} addComment={addComment} deleteComment={deleteComment}
                 userName={userName} userAvatar={userAvatar}
+                isLoopEnabled={isLoopEnabled}
+                toggleLoop={toggleLoop}
                 rating={activeItem ? (imageRatings[activeItem.name] || 0) : 0} setRating={setRating} trackPopularity={trackPopularity}
                 isAutoShuffleOn={isAutoShuffleOn} setAutoShuffleOn={setAutoShuffleOn}
+                isGlobalMute={isGlobalMute}
+                togglePin={togglePin}
+                isPinned={activeItem ? (pinnedImages.includes(activeItem.name) || pinnedImages.includes(activeItem.id)) : false}
             />
             <NameModal isOpen={!userName} setUserName={setUserName} />
 
@@ -558,6 +643,7 @@ function App() {
                 toggleFolder={toggleFolder}
                 removeFolder={removeFolder}
             />
+            <ShortcutsModal isOpen={isShortcutsOpen} closeModal={() => setIsShortcutsOpen(false)} />
         </div>
     );
 }
