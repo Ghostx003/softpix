@@ -12,18 +12,57 @@ const ImageModal = ({
     rating, setRating, trackPopularity,
     isAutoShuffleOn, setAutoShuffleOn,
     isGlobalMute = true,
-    togglePin, isPinned
+    togglePin, isPinned,
+    isLoopEnabled, toggleLoop,
+    shuffleMode, cycleShuffleMode
 }) => {
     const [mediaUrl, setMediaUrl] = useState('');
     const [commentInput, setCommentInput] = useState('');
     const [tagInput, setTagInput] = useState('');
     const videoRef = useRef(null);
+    const [promptMessage, setPromptMessage] = useState('');
+    const promptTimeoutRef = useRef(null);
+
+    const showPrompt = (msg) => {
+        if (window.innerWidth > 768) {
+            setPromptMessage(msg);
+            if (promptTimeoutRef.current) clearTimeout(promptTimeoutRef.current);
+            promptTimeoutRef.current = setTimeout(() => setPromptMessage(''), 1500);
+        }
+    };
+
+    const handleClose = () => {
+        const isFullscreenActive = !!(
+            document.fullscreenElement || 
+            document.webkitFullscreenElement || 
+            document.body.classList.contains('theater-mode')
+        );
+
+        if (isFullscreenActive) {
+            if (document.exitFullscreen) {
+                document.exitFullscreen().catch(() => {});
+            } else if (document.webkitExitFullscreen) {
+                document.webkitExitFullscreen();
+            }
+            document.body.classList.remove('theater-mode', 'theater-sidebar-open');
+            const app = document.querySelector('.app-container');
+            if (app) app.classList.remove('theater-mode', 'theater-sidebar-open');
+        } else {
+            closeModal();
+        }
+    };
 
     useEffect(() => {
         if (videoRef.current) {
             videoRef.current.muted = isGlobalMute;
         }
     }, [isGlobalMute]);
+
+    useEffect(() => {
+        if (videoRef.current) {
+            videoRef.current.loop = isLoopEnabled;
+        }
+    }, [isLoopEnabled, mediaUrl]);
 
     const itemName = item?.name;
     const itemType = item?.type;
@@ -48,7 +87,7 @@ const ImageModal = ({
                 }
             }).catch(e => console.error(e));
         } else {
-            setMediaUrl(itemUrl);
+            setMediaUrl(itemUrl || item?.url || (item?.id ? `/api/media?id=${encodeURIComponent(item.id)}` : ''));
         }
 
         return () => {
@@ -64,7 +103,7 @@ const ImageModal = ({
     useEffect(() => {
         const handleKeyDown = (e) => {
             if (!isOpen) return;
-            if (e.key === 'Escape') closeModal();
+            if (e.key === 'Escape') handleClose();
             const activeEl = document.activeElement;
             const isInputFocused = activeEl && (
                 activeEl.tagName === 'INPUT' || 
@@ -72,15 +111,24 @@ const ImageModal = ({
                 activeEl.isContentEditable
             );
             if (!isInputFocused) {
-                if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === 'ArrowDown' || e.key === 'n' || e.key === 'N') showNext();
-                if (e.key === 'ArrowLeft' || e.key === 'PageUp' || e.key === 'ArrowUp' || e.key === 'p' || e.key === 'P') showPrev();
-                if (e.key === 'l' || e.key === 'L') {
-                    if (videoRef.current) {
-                        videoRef.current.loop = !videoRef.current.loop;
-                    }
+                if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === 'ArrowDown' || e.key === 'n' || e.key === 'N') {
+                    e.preventDefault();
+                    showNext();
+                }
+                if (e.key === 'ArrowLeft' || e.key === 'PageUp' || e.key === 'ArrowUp' || e.key === 'p' || e.key === 'P') {
+                    e.preventDefault();
+                    showPrev();
                 }
                 if (e.key === 's' || e.key === 'S') {
-                    setAutoShuffleOn(prev => !prev);
+                    if (cycleShuffleMode) {
+                        const nextMode = shuffleMode === 'off' ? 'category' : (shuffleMode === 'category' ? 'global' : 'off');
+                        cycleShuffleMode();
+                        showPrompt(
+                            nextMode === 'category' ? '🔀 Category Shuffle Enabled' :
+                            nextMode === 'global' ? '🎲 Global Shuffle Enabled' :
+                            '➡️ Shuffle Disabled'
+                        );
+                    }
                 }
                 
                 const num = parseInt(e.key, 10);
@@ -109,46 +157,18 @@ const ImageModal = ({
                 }
             }
 
-            const mediaContainer = e.target.closest('.modal-image-container') || document.querySelector('.modal-image-container');
-            const videoEl = mediaContainer ? (mediaContainer.querySelector('video') || videoRef.current) : (videoRef.current || document.querySelector('#image-modal video'));
-            
-            let isLeftHalf = false;
-            if (mediaContainer) {
-                const rect = mediaContainer.getBoundingClientRect();
-                isLeftHalf = e.clientX < (rect.left + rect.width / 2);
-            } else {
-                isLeftHalf = e.clientX < (window.innerWidth / 2);
-            }
-
-            if (isLeftHalf && videoEl) {
-                e.preventDefault();
-                const now = Date.now();
-                if (now - lastScrollTime.current < 120) return;
-                lastScrollTime.current = now;
-
-                if (Math.abs(e.deltaY) > 5) {
-                    if (e.deltaY < 0) {
-                        // Scroll UP -> Move FORWARD +10 seconds
-                        videoEl.currentTime = Math.min(videoEl.duration || Infinity, videoEl.currentTime + 10);
-                    } else {
-                        // Scroll DOWN -> Move BACKWARD -10 seconds
-                        videoEl.currentTime = Math.max(0, videoEl.currentTime - 10);
-                    }
-                }
-                return;
-            }
-
+            e.preventDefault();
             const now = Date.now();
-            if (now - lastScrollTime.current < 350) return;
+            if (now - lastScrollTime.current < 250) return;
+            if (Math.abs(e.deltaY) < 10) return;
 
-            if (Math.abs(e.deltaY) > 15) {
-                if (e.deltaY > 0) {
-                    lastScrollTime.current = now;
-                    showNext();
-                } else if (e.deltaY < 0) {
-                    lastScrollTime.current = now;
-                    showPrev();
-                }
+            lastScrollTime.current = now;
+            const isLeftHalf = e.clientX < (window.innerWidth / 2);
+
+            if (isLeftHalf) {
+                showPrev();
+            } else {
+                showNext();
             }
         };
 
@@ -157,7 +177,9 @@ const ImageModal = ({
     }, [isOpen, showNext, showPrev]);
 
     const handleVideoEnded = () => {
-        showNext();
+        if (!isLoopEnabled) {
+            showNext();
+        }
     };
 
     const formatTime = (seconds) => {
@@ -167,19 +189,175 @@ const ImageModal = ({
         return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
     };
 
+    const touchStartX = useRef(null);
+    const touchStartY = useRef(null);
+    const lastTouchPos = useRef(null);
+    const initialDistance = useRef(null);
+    const initialScale = useRef(1);
+    const lastTapTime = useRef(0);
+    const isGesturing = useRef(false);
+    const transformOrigin = useRef('center center');
+    
+    const [scale, setScale] = useState(1);
+    const [position, setPosition] = useState({ x: 0, y: 0 });
+    const [videoFitMode, setVideoFitMode] = useState('contain');
+
+    // Reset zoom and video fit mode when item changes
+    useEffect(() => {
+        setScale(1);
+        setPosition({ x: 0, y: 0 });
+        setVideoFitMode('contain');
+        transformOrigin.current = 'center center';
+        isGesturing.current = false;
+    }, [item?.name]);
+
     if (!isOpen || !item || !mediaUrl) return null;
 
+    const handleTouchStart = (e) => {
+        if (e.touches.length === 2) {
+            isGesturing.current = true;
+            const touch1 = e.touches[0];
+            const touch2 = e.touches[1];
+            const dist = Math.hypot(
+                touch1.clientX - touch2.clientX,
+                touch1.clientY - touch2.clientY
+            );
+            initialDistance.current = dist;
+            
+            if (!item?.isVideo) {
+                initialScale.current = scale;
+                if (scale === 1) {
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    const midX = ((touch1.clientX + touch2.clientX) / 2) - rect.left;
+                    const midY = ((touch1.clientY + touch2.clientY) / 2) - rect.top;
+                    transformOrigin.current = `${midX}px ${midY}px`;
+                }
+            }
+        } else if (e.touches.length === 1) {
+            const now = Date.now();
+            if (now - lastTapTime.current < 300) {
+                isGesturing.current = true; // prevent swipe on double tap
+                const targetElement = document.querySelector('.app-container') || document.documentElement;
+                if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+                    if (targetElement.requestFullscreen) targetElement.requestFullscreen().catch(() => {});
+                    else if (targetElement.webkitRequestFullscreen) targetElement.webkitRequestFullscreen();
+                } else {
+                    if (document.exitFullscreen) document.exitFullscreen().catch(() => {});
+                    else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+                }
+            } else {
+                touchStartX.current = e.touches[0].clientX;
+                touchStartY.current = e.touches[0].clientY;
+                lastTouchPos.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+            }
+            lastTapTime.current = now;
+        }
+    };
+
+    const handleTouchMove = (e) => {
+        if (e.touches.length === 2) {
+            isGesturing.current = true;
+            const dist = Math.hypot(
+                e.touches[0].clientX - e.touches[1].clientX,
+                e.touches[0].clientY - e.touches[1].clientY
+            );
+            if (initialDistance.current) {
+                if (item?.isVideo) {
+                    const ratio = dist / initialDistance.current;
+                    if (ratio > 1.2 && videoFitMode !== 'cover') {
+                        setVideoFitMode('cover');
+                    } else if (ratio < 0.8 && videoFitMode !== 'contain') {
+                        setVideoFitMode('contain');
+                    }
+                } else {
+                    const newScale = Math.min(Math.max(1, initialScale.current * (dist / initialDistance.current)), 5);
+                    setScale(newScale);
+                }
+            }
+        } else if (e.touches.length === 1) {
+            if (!item?.isVideo && scale > 1 && lastTouchPos.current) {
+                isGesturing.current = true; // prevent swipe while panning
+                const dx = e.touches[0].clientX - lastTouchPos.current.x;
+                const dy = e.touches[0].clientY - lastTouchPos.current.y;
+                setPosition(prev => ({ x: prev.x + dx, y: prev.y + dy }));
+                lastTouchPos.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+            }
+        }
+    };
+
+    const handleTouchEnd = (e) => {
+        if (e.touches.length < 2) {
+            initialDistance.current = null;
+        }
+        
+        if (!isGesturing.current && scale === 1 && touchStartX.current !== null && touchStartY.current !== null && e.changedTouches.length === 1) {
+            const deltaX = touchStartX.current - e.changedTouches[0].clientX;
+            const deltaY = touchStartY.current - e.changedTouches[0].clientY;
+            
+            if (Math.abs(deltaX) > 40 && Math.abs(deltaX) > Math.abs(deltaY)) {
+                if (item.isVideo && videoRef.current) {
+                    if (deltaX > 0) videoRef.current.currentTime = Math.min(videoRef.current.duration || Infinity, videoRef.current.currentTime + 7);
+                    else videoRef.current.currentTime = Math.max(0, videoRef.current.currentTime - 7);
+                    document.querySelector('.media-backdrop-area')?.dispatchEvent(new MouseEvent('mousemove'));
+                } else {
+                    if (deltaX > 0) showNext();
+                    else showPrev();
+                }
+            } else if (Math.abs(deltaY) > 40 && Math.abs(deltaY) > Math.abs(deltaX)) {
+                if (deltaY > 0) showNext();
+                else showPrev();
+            }
+        }
+        
+        if (scale <= 1) {
+            setScale(1);
+            setPosition({ x: 0, y: 0 });
+            transformOrigin.current = 'center center';
+        }
+        
+        if (e.touches.length === 0) {
+            touchStartX.current = null;
+            touchStartY.current = null;
+            lastTouchPos.current = null;
+            isGesturing.current = false;
+        }
+    };
+
     return (
-        <div id="image-modal" style={{ display: 'flex' }} onClick={(e) => { if (e.target.id === 'image-modal') closeModal(); }}>
+        <div id="image-modal" style={{ display: 'flex' }} onClick={(e) => { if (e.target.id === 'image-modal') handleClose(); }}>
             <div className="modal-content" onClick={e => e.stopPropagation()}>
-                <div className="modal-image-container" style={{ position: 'relative' }}>
+                <div className="modal-image-container" style={{ position: 'relative', touchAction: 'none', overflow: 'hidden' }} onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd} onTouchCancel={handleTouchEnd}>
+                    {promptMessage && (
+                        <div style={{ position: 'absolute', top: '40px', left: '50%', transform: 'translateX(-50%)', background: 'rgba(0,0,0,0.8)', color: 'white', padding: '10px 20px', borderRadius: '8px', fontSize: '1.1rem', fontWeight: 'bold', pointerEvents: 'none', zIndex: 100, transition: 'opacity 0.3s' }}>
+                            {promptMessage}
+                        </div>
+                    )}
                     {item.isVideo ? (
-                        <video ref={videoRef} src={mediaUrl} autoPlay muted={isGlobalMute} onEnded={handleVideoEnded} style={{ maxWidth: '100%', maxHeight: '100%' }}></video>
+                        <video 
+                            ref={videoRef} 
+                            src={mediaUrl} 
+                            autoPlay 
+                            loop={isLoopEnabled}
+                            muted={isGlobalMute} 
+                            onEnded={handleVideoEnded}
+                            onClick={() => {
+                                if (videoRef.current) {
+                                    if (videoRef.current.paused) {
+                                        videoRef.current.play();
+                                    } else {
+                                        videoRef.current.pause();
+                                    }
+                                    document.querySelector('.media-backdrop-area')?.dispatchEvent(new MouseEvent('mousemove'));
+                                }
+                            }}
+                            style={{ maxWidth: '100%', maxHeight: '100%', width: '100%', height: '100%', objectFit: videoFitMode, transition: 'object-fit 0.25s ease', pointerEvents: 'auto', WebkitTouchCallout: 'default', userSelect: 'auto' }}
+                        ></video>
                     ) : (
-                        <img src={mediaUrl} alt={item.name} style={{ maxWidth: '100%', maxHeight: '100%' }} />
+                        <img src={mediaUrl} alt={item.name} style={{ maxWidth: '100%', maxHeight: '100%', transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`, transition: initialDistance.current ? 'none' : 'transform 0.1s ease-out', transformOrigin: transformOrigin.current, pointerEvents: 'auto', WebkitTouchCallout: 'default', userSelect: 'auto' }} />
                     )}
                     
                     <BookmarkOverlay 
+
                         item={item} 
                         videoRef={videoRef} 
                         bookmarks={bookmarks} 
@@ -190,6 +368,10 @@ const ImageModal = ({
                         rating={rating}
                         setRating={setRating}
                         isPinned={isPinned}
+                        isLoopEnabled={isLoopEnabled}
+                        toggleLoop={toggleLoop}
+                        shuffleMode={shuffleMode}
+                        cycleShuffleMode={cycleShuffleMode}
                     />
                 </div>
                 <div className="modal-details-container">
@@ -390,9 +572,7 @@ const ImageModal = ({
 
                 </div>
             </div>
-            <button className="modal-nav-btn" id="close-btn" onClick={closeModal} style={{ top: '2%', right: '2%', width: '40px', height: '40px', fontSize: '1.5rem' }}>&times;</button>
-            <button className="modal-nav-btn" id="prev-btn" onClick={showPrev} style={{ left: '2%' }}>&#10094;</button>
-            <button className="modal-nav-btn" id="next-btn" onClick={showNext} style={{ right: '2%' }}>&#10095;</button>
+            <button className="modal-nav-btn" id="close-btn" onClick={handleClose} style={{ top: '2%', right: '2%', width: '40px', height: '40px', fontSize: '1.5rem' }}>&times;</button>
         </div>
     );
 };

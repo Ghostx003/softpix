@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, memo } from 'react';
+import React, { useState, useEffect, useRef, memo, useCallback } from 'react';
 import ContextMenu from './ContextMenu';
 import { copyImageToClipboard } from '../utils/copyImage';
 
@@ -119,7 +119,7 @@ const GridItem = memo(({ item, index, openModal, togglePin, deleteImage, isPinne
         };
     }, []);
 
-    // 2. High-Performance Blob URL Caching (Zero ERR_FILE_NOT_FOUND)
+    // 2. High-Performance Blob URL Caching (Zero ERR_FILE_NOT_FOUND) & Wi-Fi Server Sync
     useEffect(() => {
         let isActive = true;
 
@@ -133,18 +133,27 @@ const GridItem = memo(({ item, index, openModal, togglePin, deleteImage, isPinne
                             const createdUrl = URL.createObjectURL(file);
                             blobUrlCache.set(itemId, createdUrl);
                             setMediaUrl(createdUrl);
+                            // Proactively upload buffer to local server for phone Wi-Fi streaming
+                            file.arrayBuffer().then(buf => {
+                                fetch(`/api/sync/upload-file?id=${encodeURIComponent(itemId)}`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/octet-stream' },
+                                    body: buf
+                                }).catch(() => {});
+                            }).catch(() => {});
                         }
                     }).catch(e => console.error("Error creating url", e));
                 }
             } else {
-                setMediaUrl(itemUrl);
+                const targetUrl = item.url || itemUrl || `/api/media?id=${encodeURIComponent(itemId)}`;
+                setMediaUrl(targetUrl);
             }
         }
 
         return () => {
             isActive = false;
         };
-    }, [isVisible, itemId, itemType, itemHandle, itemUrl]);
+    }, [isVisible, itemId, itemType, itemHandle, itemUrl, item.url]);
 
     const indexRef = useRef(index);
     indexRef.current = index;
@@ -194,14 +203,24 @@ const GridItem = memo(({ item, index, openModal, togglePin, deleteImage, isPinne
         }
     }, [isHovered, isPlayAll, isInViewport, isGlobalMute, isVisible, mediaUrl, isVideo]);
 
+    const handleMediaError = () => {
+        if (blobUrlCache.has(itemId)) {
+            blobUrlCache.delete(itemId);
+        }
+        const fallbackUrl = item.url || itemUrl || `/api/media?id=${encodeURIComponent(itemId)}`;
+        if (mediaUrl !== fallbackUrl) {
+            setMediaUrl(fallbackUrl);
+        }
+    };
+
     return (
         <div ref={containerRef} className="pin-container" onClick={() => openModal(index)} onContextMenu={handleContextMenu} onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave}>
             {isVisible && mediaUrl ? (
                 <>
                     {item.isVideo ? (
-                        <video ref={videoRef} loop playsInline src={mediaUrl} preload="metadata" muted={isGlobalMute}></video>
+                        <video ref={videoRef} loop playsInline src={mediaUrl} preload="metadata" muted={isGlobalMute} onError={handleMediaError}></video>
                     ) : (
-                        <img src={mediaUrl} alt={item.name} loading="lazy" />
+                        <img src={mediaUrl} alt={item.name} loading="lazy" onError={handleMediaError} />
                     )}
                     {item.isVideo && <div className="video-indicator">VIDEO</div>}
                     {itemRating > 0 && (
@@ -239,10 +258,10 @@ const GridItem = memo(({ item, index, openModal, togglePin, deleteImage, isPinne
     );
 });
 
-const ImageGrid = ({ displayedItems, openModal, togglePin, deleteImage, pinnedImages, isGlobalMute, columnCount, isPrompting, resumeSession, resumeFolderName, isPlayAll, imageRatings, setRatingForItem }) => {
+const ImageGrid = ({ displayedItems, openModal, togglePin, deleteImage, pinnedImages, isGlobalMute, columnCount, isPrompting, resumeSession, resumeFolderName, isPlayAll, imageRatings, setRatingForItem, isComfortView }) => {
     const [contextMenuState, setContextMenuState] = useState(null);
 
-    const handleGridItemRightClick = (e, item, isPinned, mediaUrl, itemRating) => {
+    const handleGridItemRightClick = useCallback((e, item, isPinned, mediaUrl, itemRating) => {
         setContextMenuState(prev => {
             if (prev) {
                 const dist = Math.hypot(e.clientX - prev.x, e.clientY - prev.y);
@@ -256,7 +275,7 @@ const ImageGrid = ({ displayedItems, openModal, togglePin, deleteImage, pinnedIm
                 itemRating
             };
         });
-    };
+    }, []);
 
     if (isPrompting) {
         return (
@@ -285,7 +304,7 @@ const ImageGrid = ({ displayedItems, openModal, togglePin, deleteImage, pinnedIm
     }
 
     return (
-        <div id="image-grid" style={{ display: 'grid', gridTemplateColumns: columnCount === 'auto' ? 'repeat(auto-fill, minmax(300px, 1fr))' : `repeat(${columnCount}, 1fr)` }}>
+        <div id="image-grid" className={isComfortView ? 'comfort-view' : ''} style={{ display: 'grid', gridTemplateColumns: columnCount === 'auto' ? 'repeat(auto-fill, minmax(450px, 1fr))' : `repeat(${columnCount}, 1fr)` }}>
             {displayedItems.map((item, index) => (
                 <GridItem 
                     key={`${item.id || item.name || 'item'}_${index}`} 

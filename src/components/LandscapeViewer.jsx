@@ -10,11 +10,33 @@ const LandscapeViewer = ({
     comments, addComment, deleteComment,
     userName, userAvatar,
     rating, setRating, trackPopularity,
-    togglePin, deleteImage, isPinned
+    togglePin, deleteImage, isPinned,
+    isInfoPanelOpen = false,
+    setIsInfoPanelOpen,
+    isSidebarCollapsed
 }) => {
     const [commentInput, setCommentInput] = useState('');
     const [tagInput, setTagInput] = useState('');
+    const [isButtonVisible, setIsButtonVisible] = useState(true);
+    const hideTimerRef = useRef(null);
     const videoRef = useRef(null);
+
+    const handleMouseMove = () => {
+        setIsButtonVisible(true);
+        if (hideTimerRef.current) {
+            clearTimeout(hideTimerRef.current);
+        }
+        hideTimerRef.current = setTimeout(() => {
+            setIsButtonVisible(false);
+        }, 5000);
+    };
+
+    useEffect(() => {
+        handleMouseMove();
+        return () => {
+            if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+        };
+    }, [item.name]);
 
     const handleVideoEnded = () => {
         if (onNext && !isLoopEnabled) {
@@ -57,7 +79,8 @@ const LandscapeViewer = ({
 
         // Cleanup: Pause and save resume time exactly once when unmounting
         return () => {
-            setResumeTime(item.name, video.currentTime);
+            const isAtEnd = video.ended || (video.duration && video.currentTime >= video.duration - 0.5);
+            setResumeTime(item.name, isAtEnd ? 0 : video.currentTime);
             video.pause();
         };
         // Exclude resumeTime and setResumeTime to prevent continuous re-renders
@@ -71,13 +94,97 @@ const LandscapeViewer = ({
         return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
     };
 
+    const handleDoubleClick = (e) => {
+        const targetElement = document.querySelector('.app-container') || document.documentElement;
+        if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+            if (targetElement.requestFullscreen) targetElement.requestFullscreen().catch(() => {});
+            else if (targetElement.webkitRequestFullscreen) targetElement.webkitRequestFullscreen();
+        } else {
+            if (document.exitFullscreen) document.exitFullscreen().catch(() => {});
+            else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+        }
+    };
+
     return (
-        <div className="landscape-viewer" style={{ width: '100%', height: '100%', display: 'flex', background: 'var(--bg-primary)', overflow: 'hidden', minHeight: 0, minWidth: 0 }}>
-            <div className="viewer-media-container" style={{ flex: 3, position: 'relative', background: '#000', display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '2rem', minHeight: 0, minWidth: 0 }}>
+        <div className="landscape-viewer" onMouseMove={handleMouseMove} style={{ width: '100%', height: '100%', display: 'flex', background: 'var(--bg-primary)', overflow: 'hidden', minHeight: 0, minWidth: 0 }}>
+            <div className={`viewer-media-container ${isInfoPanelOpen ? 'media-container-resized' : ''}`} onMouseMove={handleMouseMove} onDoubleClick={handleDoubleClick} style={{ flex: 1, position: 'relative', background: '#000', display: 'flex', justifyContent: 'center', alignItems: 'center', padding: 0, minHeight: 0, minWidth: 0 }}>
+                {/* FLOATING HAMBURGER MENU BUTTON OVER TOP-LEFT OF VIDEO */}
+                <button 
+                    className="floating-btn-left"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        window.dispatchEvent(new CustomEvent('toggle-left-sidebar'));
+                    }}
+                    style={{
+                        position: 'absolute',
+                        left: '12px',
+                        zIndex: 50,
+                        opacity: (isButtonVisible && isSidebarCollapsed) ? 1 : 0,
+                        pointerEvents: (isButtonVisible && isSidebarCollapsed) ? 'auto' : 'none',
+                        background: 'rgba(0, 0, 0, 0.65)',
+                        backdropFilter: 'blur(8px)',
+                        border: '1px solid rgba(255, 255, 255, 0.25)',
+                        color: '#ffffff',
+                        borderRadius: '10px',
+                        width: '36px',
+                        height: '36px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+                        transition: 'all 0.15s ease'
+                    }}
+                    title="Toggle Left Categories Sidebar (Press [)"
+                >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                        <line x1="3" y1="12" x2="21" y2="12"></line>
+                        <line x1="3" y1="6" x2="21" y2="6"></line>
+                        <line x1="3" y1="18" x2="21" y2="18"></line>
+                    </svg>
+                </button>
+
+                {/* FLOATING MORE INFO BUTTON OVER TOP-RIGHT OF VIDEO */}
+                <button 
+                    className="floating-btn-right"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        if (setIsInfoPanelOpen) setIsInfoPanelOpen(prev => !prev);
+                    }}
+                    style={{
+                        position: 'absolute',
+                        right: '12px',
+                        zIndex: 50,
+                        opacity: (isButtonVisible && !isInfoPanelOpen) ? 1 : 0,
+                        pointerEvents: (isButtonVisible && !isInfoPanelOpen) ? 'auto' : 'none',
+                        background: 'rgba(0, 0, 0, 0.65)',
+                        backdropFilter: 'blur(8px)',
+                        border: isInfoPanelOpen ? '1px solid #3b82f6' : '1px solid rgba(255, 255, 255, 0.25)',
+                        color: '#ffffff',
+                        borderRadius: '20px',
+                        padding: '6px 14px',
+                        fontSize: '0.78rem',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+                        transition: 'all 0.15s ease'
+                    }}
+                    title={isInfoPanelOpen ? "Hide Info Panel" : "Show Info Panel"}
+                >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="16" x2="12" y2="12"></line>
+                        <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                    </svg>
+                    <span>Show Info</span>
+                </button>
                 {item.isVideo ? (
-                    <video ref={videoRef} src={mediaUrl} loop={isLoopEnabled} muted={isGlobalMute} onEnded={handleVideoEnded} style={{ width: '100%', height: '100%', objectFit: 'contain', borderRadius: '8px', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}></video>
+                    <video ref={videoRef} src={mediaUrl} loop={isLoopEnabled} muted={isGlobalMute} onEnded={handleVideoEnded} style={{ width: '100%', height: '100%', objectFit: (typeof localStorage !== 'undefined' && localStorage.getItem('softpixVideoFitMode')) || 'contain', borderRadius: 0, boxShadow: 'none' }}></video>
                 ) : (
-                    <img src={mediaUrl} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'contain', borderRadius: '8px', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }} />
+                    <img src={mediaUrl} alt={item.name} style={{ width: '100%', height: '100%', objectFit: (typeof localStorage !== 'undefined' && localStorage.getItem('softpixVideoFitMode')) || 'contain', borderRadius: 0, boxShadow: 'none' }} />
                 )}
                 
                 <BookmarkOverlay 
@@ -96,9 +203,42 @@ const LandscapeViewer = ({
                 />
             </div>
             
-            <div className="viewer-metadata-panel" style={{ flex: 1, minWidth: '350px', maxWidth: '450px', background: 'var(--bg-secondary)', borderLeft: '1px solid var(--border-primary)', display: 'flex', flexDirection: 'column', padding: '1.5rem', overflowY: 'auto' }}>
+            <div className={`viewer-metadata-panel ${isInfoPanelOpen ? 'panel-open' : ''}`} style={{ flex: 1, minWidth: '320px', maxWidth: '420px', background: 'var(--bg-secondary)', borderLeft: '1px solid var(--border-primary)', display: isInfoPanelOpen ? 'flex' : 'none', flexDirection: 'column', padding: '1.5rem', overflowY: 'auto' }}>
                 <div style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '0.75rem', marginBottom: '1.2rem' }}>
-                    <h3 style={{ wordBreak: 'break-word', marginTop: 0, marginBottom: '0.65rem', fontSize: '1.15rem', fontWeight: 700, color: 'var(--text-primary)' }}>{item.name}</h3>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.65rem' }}>
+                        <h3 style={{ wordBreak: 'break-word', margin: 0, fontSize: '1.15rem', fontWeight: 700, color: 'var(--text-primary)' }}>{item.name}</h3>
+                        <button 
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                if (setIsInfoPanelOpen) setIsInfoPanelOpen(false);
+                            }}
+                            style={{ 
+                                background: 'rgba(255, 255, 255, 0.08)', 
+                                border: '1px solid rgba(255, 255, 255, 0.15)', 
+                                borderRadius: '8px', 
+                                color: '#ffffff', 
+                                cursor: 'pointer', 
+                                padding: '8px 12px', 
+                                display: 'flex', 
+                                alignItems: 'center', 
+                                gap: '8px',
+                                fontSize: '0.85rem',
+                                fontWeight: 600,
+                                transition: 'all 0.15s ease',
+                                marginLeft: '10px',
+                                flexShrink: 0
+                            }} 
+                            title="Minimize Info Panel"
+                            onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(59, 130, 246, 0.3)'; e.currentTarget.style.borderColor = '#3b82f6'; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)'; e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.15)'; }}
+                        >
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                <line x1="18" y1="6" x2="6" y2="18"></line>
+                                <line x1="6" y1="6" x2="18" y2="18"></line>
+                            </svg>
+                            <span>Minimize</span>
+                        </button>
+                    </div>
                     
                     <div className="viewer-rating-section" style={{ padding: '0.6rem 0.85rem', background: 'rgba(255,255,255,0.02)', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                         <span style={{ fontWeight: 600, fontSize: '0.82rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)' }}>

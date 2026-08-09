@@ -7,7 +7,31 @@ const TagBar = ({ activeFilterTags, setActiveFilterTags, uniqueTags, deleteTag, 
     const isHoveringCategoryRef = useRef(false);
 
     const scrollPosRef = useRef(0);
+    const maxScrollRef = useRef(0);
     const lastTimeRef = useRef(null);
+
+    // Measure scroll bounds via ResizeObserver outside of rAF loop
+    useEffect(() => {
+        const updateMaxScroll = () => {
+            if (barRef.current) {
+                maxScrollRef.current = Math.max(0, barRef.current.scrollWidth - barRef.current.clientWidth);
+            }
+        };
+
+        updateMaxScroll();
+
+        let observer = null;
+        if (typeof ResizeObserver !== 'undefined' && barRef.current) {
+            observer = new ResizeObserver(updateMaxScroll);
+            observer.observe(barRef.current);
+        }
+
+        window.addEventListener('resize', updateMaxScroll);
+        return () => {
+            if (observer) observer.disconnect();
+            window.removeEventListener('resize', updateMaxScroll);
+        };
+    }, [uniqueTags.length]);
 
     useEffect(() => {
         const el = barRef.current;
@@ -22,44 +46,49 @@ const TagBar = ({ activeFilterTags, setActiveFilterTags, uniqueTags, deleteTag, 
             const dt = Math.min((timestamp - lastTimeRef.current) / 1000, 0.1);
             lastTimeRef.current = timestamp;
 
+            if (window.innerWidth <= 768) {
+                animFrameRef.current = requestAnimationFrame(step);
+                return;
+            }
+
+            const maxScroll = maxScrollRef.current;
             const scrollEl = barRef.current;
-            if (scrollEl) {
-                const maxScroll = scrollEl.scrollWidth - scrollEl.clientWidth;
-                if (maxScroll > 0) {
-                    if (mousePosRef.current.isOver) {
-                        const relX = mousePosRef.current.relX;
-                        // Right edge zone (right 25%) -> scroll right smoothly
-                        if (relX > 0.75) {
-                            const factor = (relX - 0.75) / 0.25;
-                            scrollPosRef.current += factor * 300 * dt;
-                            if (scrollPosRef.current > maxScroll) scrollPosRef.current = maxScroll;
-                            scrollEl.scrollLeft = scrollPosRef.current;
-                        } 
-                        // Left edge zone (left 25%) -> scroll left smoothly
-                        else if (relX < 0.25) {
-                            const factor = (0.25 - relX) / 0.25;
-                            scrollPosRef.current -= factor * 300 * dt;
-                            if (scrollPosRef.current < 0) scrollPosRef.current = 0;
-                            scrollEl.scrollLeft = scrollPosRef.current;
-                        } else {
-                            scrollPosRef.current = scrollEl.scrollLeft;
-                        }
-                    } else if (!isHoveringCategoryRef.current) {
-                        // Slow ambient auto-scroll when idle
-                        scrollPosRef.current += autoSpeedPerSec * direction * dt;
-                        if (scrollPosRef.current >= maxScroll - 1) {
-                            scrollPosRef.current = maxScroll - 1;
-                            direction = -1;
-                        } else if (scrollPosRef.current <= 1) {
-                            scrollPosRef.current = 1;
-                            direction = 1;
-                        }
+
+            if (scrollEl && maxScroll > 0) {
+                if (mousePosRef.current.isOver) {
+                    const relX = mousePosRef.current.relX;
+                    // Right edge zone (right 25%) -> scroll right smoothly
+                    if (relX > 0.75) {
+                        const factor = (relX - 0.75) / 0.25;
+                        scrollPosRef.current += factor * 300 * dt;
+                        if (scrollPosRef.current > maxScroll) scrollPosRef.current = maxScroll;
+                        scrollEl.scrollLeft = scrollPosRef.current;
+                    } 
+                    // Left edge zone (left 25%) -> scroll left smoothly
+                    else if (relX < 0.25) {
+                        const factor = (0.25 - relX) / 0.25;
+                        scrollPosRef.current -= factor * 300 * dt;
+                        if (scrollPosRef.current < 0) scrollPosRef.current = 0;
                         scrollEl.scrollLeft = scrollPosRef.current;
                     } else {
                         scrollPosRef.current = scrollEl.scrollLeft;
                     }
+                } else if (!isHoveringCategoryRef.current) {
+                    // Slow ambient auto-scroll when idle
+                    scrollPosRef.current += autoSpeedPerSec * direction * dt;
+                    if (scrollPosRef.current >= maxScroll - 1) {
+                        scrollPosRef.current = maxScroll - 1;
+                        direction = -1;
+                    } else if (scrollPosRef.current <= 1) {
+                        scrollPosRef.current = 1;
+                        direction = 1;
+                    }
+                    scrollEl.scrollLeft = scrollPosRef.current;
+                } else {
+                    scrollPosRef.current = scrollEl.scrollLeft;
                 }
             }
+
             animFrameRef.current = requestAnimationFrame(step);
         };
 
@@ -118,16 +147,9 @@ const TagBar = ({ activeFilterTags, setActiveFilterTags, uniqueTags, deleteTag, 
                         onClick={() => toggleFilter(tag)}
                     >
                         <span>{tag}</span>
-                        <span className="tag-count-badge" title={`${tagCounts[tag] || 0} items`}>
-                            {tagCounts[tag] || 0}
-                        </span>
-                    </button>
-                    <button 
-                        className="delete-tag-btn" 
-                        title="Delete tag from all images"
-                        onClick={(e) => { e.stopPropagation(); deleteTag(tag); }}
-                    >
-                        &times;
+                        {tagCounts[tag] !== undefined && (
+                            <span className="tag-count">({tagCounts[tag]})</span>
+                        )}
                     </button>
                 </div>
             ))}

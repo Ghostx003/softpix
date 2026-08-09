@@ -76,29 +76,34 @@ export function useFileSystem() {
 
     async function traverseDirectory(dirHandle, parentTags = [], folderId = '') {
         let files = [];
+        if (!dirHandle) return files;
         try {
             for await (const entry of dirHandle.values()) {
-                if (entry.kind === 'file') {
-                    if (allExtensions.some(ext => entry.name.toLowerCase().endsWith(ext))) {
-                        const file = await entry.getFile();
-                        files.push({
-                            handle: entry,
-                            name: entry.name,
-                            id: (folderId ? folderId + '/' : '') + (parentTags.length > 0 ? parentTags.join('/') + '/' + entry.name : entry.name),
-                            lastModified: file.lastModified,
-                            isVideo: videoExtensions.some(ext => entry.name.toLowerCase().endsWith(ext)),
-                            type: 'local',
-                            folderTags: parentTags,
-                            folderId: folderId
-                        });
+                try {
+                    if (entry.kind === 'file') {
+                        if (allExtensions.some(ext => entry.name.toLowerCase().endsWith(ext))) {
+                            const file = await entry.getFile();
+                            files.push({
+                                handle: entry,
+                                name: entry.name,
+                                id: (folderId ? folderId + '/' : '') + (parentTags.length > 0 ? parentTags.join('/') + '/' + entry.name : entry.name),
+                                lastModified: file.lastModified,
+                                isVideo: videoExtensions.some(ext => entry.name.toLowerCase().endsWith(ext)),
+                                type: 'local',
+                                folderTags: parentTags,
+                                folderId: folderId
+                            });
+                        }
+                    } else if (entry.kind === 'directory') {
+                        const subFiles = await traverseDirectory(entry, [...parentTags, entry.name], folderId);
+                        files = files.concat(subFiles);
                     }
-                } else if (entry.kind === 'directory') {
-                    const subFiles = await traverseDirectory(entry, [...parentTags, entry.name], folderId);
-                    files = files.concat(subFiles);
+                } catch (itemErr) {
+                    // Gracefully skip deleted or inaccessible entries without aborting the scan
                 }
             }
         } catch (e) {
-            console.warn("Could not read subdirectory", e);
+            // Gracefully handle inaccessible directory handles
         }
         return files;
     }

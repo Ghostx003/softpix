@@ -29,7 +29,10 @@ const TransitionManager = ({
     trackPopularity,
     togglePin,
     deleteImage,
-    pinnedImages = []
+    pinnedImages = [],
+    isInfoPanelOpen = false,
+    setIsInfoPanelOpen,
+    isSidebarCollapsed
 }) => {
     const [currentItem, setCurrentItem] = useState(null);
     const [currentMediaUrl, setCurrentMediaUrl] = useState(null);
@@ -40,50 +43,37 @@ const TransitionManager = ({
     const activeItemRef = useRef(activeItem);
     
     useEffect(() => {
-        activeItemRef.current = activeItem;
-        
         if (!activeItem) {
             setCurrentItem(null);
             return;
         }
 
+        // Avoid re-triggering transition if the media item is identical
+        if (currentItem && (currentItem.id === activeItem.id || currentItem.name === activeItem.name)) {
+            return;
+        }
+
+        activeItemRef.current = activeItem;
+
         const performTransition = async () => {
-            // 1. Fade out current viewer
-            setOpacity(0);
-            
-            // Wait for fade out CSS transition (e.g., 300ms)
-            await new Promise(r => setTimeout(r, 300));
-            
-            // If activeItem changed during fade out, abort this transition
+            // 1. Load next media URL
+            const nextUrl = await loadMediaUrl(activeItem);
             if (activeItemRef.current !== activeItem) return;
             
-            // 2. Unmount old viewer
-            setCurrentItem(null);
+            // 2. Determine Orientation BEFORE rendering
+            const orientation = await detectOrientation(nextUrl, activeItem.isVideo);
+            if (activeItemRef.current !== activeItem) return;
+
+            // 3. Cleanup old blob URL if local
             if (currentMediaUrl && currentItem?.type === 'local') {
                 URL.revokeObjectURL(currentMediaUrl);
             }
-            
-            // 3. Load next media URL
-            const nextUrl = await loadMediaUrl(activeItem);
-            
-            if (activeItemRef.current !== activeItem) return;
-            
-            // 4. Determine Orientation BEFORE rendering
-            const orientation = await detectOrientation(nextUrl, activeItem.isVideo);
-            
-            if (activeItemRef.current !== activeItem) return;
 
-            // 5. Create new viewer state
+            // 4. Update viewer state atomically
             setCurrentMediaUrl(nextUrl);
             setCurrentOrientation(orientation);
             setCurrentItem(activeItem);
-            
-            // 6. Fade in
-            setTimeout(() => {
-                if (activeItemRef.current === activeItem) {
-                    setOpacity(1);
-                }
-            }, 50);
+            setOpacity(1);
         };
         
         performTransition();
@@ -136,6 +126,9 @@ const TransitionManager = ({
                 togglePin={togglePin}
                 deleteImage={deleteImage}
                 isPinned={pinnedImages.includes(currentItem.name) || pinnedImages.includes(currentItem.id)}
+                isInfoPanelOpen={isInfoPanelOpen}
+                setIsInfoPanelOpen={setIsInfoPanelOpen}
+                isSidebarCollapsed={isSidebarCollapsed}
             />
         </div>
     );

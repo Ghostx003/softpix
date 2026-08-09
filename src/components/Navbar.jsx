@@ -4,6 +4,7 @@ const Navbar = ({
     isGlobalMute, toggleGlobalMute, onGlobalShuffle, surpriseMe,
     isPlayAll, togglePlayAll,
     currentTypeFilter, setTypeFilter, columnCount, setColumnCount,
+    isComfortView, toggleComfortView,
     sortBy, setSortBy, selectFolder, toggleSidebar,
     currentView, setCurrentView, openExportModal
 }) => {
@@ -15,6 +16,20 @@ const Navbar = ({
     };
 
     const filterText = currentTypeFilter === 'photo' ? '📷 Photos Only' : currentTypeFilter === 'video' ? '🎥 Videos Only' : 'All Media';
+
+    const handleColumnSelectChange = (e) => {
+        const val = e.target.value;
+        if (val.startsWith('comfort-')) {
+            const col = val.replace('comfort-', '');
+            if (!isComfortView) toggleComfortView();
+            setColumnCount(col);
+        } else {
+            if (isComfortView) toggleComfortView();
+            setColumnCount(val);
+        }
+    };
+
+    const currentColumnSelectValue = isComfortView ? `comfort-${columnCount}` : columnCount;
 
     return (
         <div className="navbar">
@@ -83,14 +98,24 @@ const Navbar = ({
                 <button className="btn-secondary" style={{ minWidth: '110px' }} onClick={cycleTypeFilter}>
                     {filterText}
                 </button>
-
-                <select className="sort-select" title="Items per row" value={columnCount} onChange={(e) => setColumnCount(e.target.value)}>
-                    <option value="auto">Auto</option>
-                    <option value="3">3 Columns</option>
-                    <option value="4">4 Columns</option>
-                    <option value="5">5 Columns</option>
-                    <option value="6">6 Columns</option>
-                    <option value="7">7 Columns</option>
+                
+                <select className="sort-select" title="Items per row & layout mode" value={currentColumnSelectValue} onChange={handleColumnSelectChange}>
+                    <optgroup label="Standard Grid">
+                        <option value="auto">Auto</option>
+                        <option value="3">3 Columns</option>
+                        <option value="4">4 Columns</option>
+                        <option value="5">5 Columns</option>
+                        <option value="6">6 Columns</option>
+                        <option value="7">7 Columns</option>
+                    </optgroup>
+                    <optgroup label="Comfort View (Rounded & Spaced)">
+                        <option value="comfort-auto">Comfort: Auto</option>
+                        <option value="comfort-3">Comfort: 3 Columns</option>
+                        <option value="comfort-4">Comfort: 4 Columns</option>
+                        <option value="comfort-5">Comfort: 5 Columns</option>
+                        <option value="comfort-6">Comfort: 6 Columns</option>
+                        <option value="comfort-7">Comfort: 7 Columns</option>
+                    </optgroup>
                 </select>
 
                 <select className="sort-select" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
@@ -106,9 +131,13 @@ const Navbar = ({
                 </select>
                 <button className="btn-secondary" onClick={openExportModal} title="Export Media Lists">Export</button>
                 <button className="btn-primary" onClick={selectFolder}>Select Folder</button>
-                <button className="hamburger-menu" onClick={toggleSidebar}>
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M4 6H20M4 12H20M4 18H20" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                <button className="hamburger-menu" onClick={toggleSidebar} title="Color Palette & Settings">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <circle cx="13.5" cy="6.5" r=".5" fill="currentColor"></circle>
+                        <circle cx="17.5" cy="10.5" r=".5" fill="currentColor"></circle>
+                        <circle cx="8.5" cy="7.5" r=".5" fill="currentColor"></circle>
+                        <circle cx="6.5" cy="12.5" r=".5" fill="currentColor"></circle>
+                        <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.92 0 1.7-.75 1.7-1.7 0-.42-.16-.81-.43-1.1-.26-.29-.42-.68-.42-1.11 0-.93.76-1.7 1.7-1.7h2.45c3.2 0 5.8-2.6 5.8-5.8 0-4.7-4.6-8.59-10.8-8.59z"></path>
                     </svg>
                 </button>
             </div>

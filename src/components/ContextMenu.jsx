@@ -90,6 +90,35 @@ const ContextMenu = ({ x, y, item, onClose, onCopy, onPin, onDelete, isPinned })
                 <span>Copy Image</span>
             </button>
 
+            {/* Option: Download */}
+            {onDownload && (
+                <button
+                    className="context-menu-item"
+                    onClick={() => { onDownload(item); onClose(); }}
+                    style={{
+                        width: '100%',
+                        background: 'transparent',
+                        border: 'none',
+                        borderRadius: '6px',
+                        color: '#f8fafc',
+                        padding: '8px 10px',
+                        textAlign: 'left',
+                        cursor: 'pointer',
+                        fontSize: '0.85rem',
+                        fontWeight: 500,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                        transition: 'background 0.15s ease'
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(59, 130, 246, 0.25)'}
+                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                >
+                    <span>⬇️</span>
+                    <span>Download</span>
+                </button>
+            )}
+
             {/* Option 2: Pin Item */}
             <button
                 className="context-menu-item"
@@ -124,7 +153,10 @@ const ContextMenu = ({ x, y, item, onClose, onCopy, onPin, onDelete, isPinned })
                 style={{
                     width: '100%',
                     background: 'transparent',
-                    border: 'none',
+                    borderLeft: 'none',
+                    borderRight: 'none',
+                    borderBottom: 'none',
+                    borderTop: '1px solid rgba(255, 255, 255, 0.05)',
                     borderRadius: '6px',
                     color: '#ef4444',
                     padding: '8px 10px',
@@ -136,7 +168,6 @@ const ContextMenu = ({ x, y, item, onClose, onCopy, onPin, onDelete, isPinned })
                     alignItems: 'center',
                     gap: '10px',
                     marginTop: '2px',
-                    borderTop: '1px solid rgba(255, 255, 255, 0.05)',
                     transition: 'background 0.15s ease'
                 }}
                 onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(239, 68, 68, 0.2)'}
@@ -147,6 +178,7 @@ const ContextMenu = ({ x, y, item, onClose, onCopy, onPin, onDelete, isPinned })
             </button>
         </div>
     );
+
 };
 
 export default ContextMenu;

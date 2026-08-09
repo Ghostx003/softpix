@@ -13,10 +13,19 @@ export function useLocalStorage(key, initialValue) {
 
     const setValue = (value) => {
         try {
-            const valueToStore = value instanceof Function ? value(storedValue) : value;
-            setStoredValue(valueToStore);
-            if (typeof window !== 'undefined') {
-                window.localStorage.setItem(key, JSON.stringify(valueToStore));
+            if (value instanceof Function) {
+                setStoredValue(prev => {
+                    const valueToStore = value(prev);
+                    if (typeof window !== 'undefined') {
+                        window.localStorage.setItem(key, JSON.stringify(valueToStore));
+                    }
+                    return valueToStore;
+                });
+            } else {
+                setStoredValue(value);
+                if (typeof window !== 'undefined') {
+                    window.localStorage.setItem(key, JSON.stringify(value));
+                }
             }
         } catch (error) {
             console.error(error);

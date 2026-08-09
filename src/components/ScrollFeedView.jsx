@@ -26,13 +26,52 @@ const ScrollFeedView = ({
     
     // New Feature States
     const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+    const [isInfoPanelOpen, setIsInfoPanelOpen] = useLocalStorage('softpixScrollInfoOpen', false);
     const [selectedShuffleCategories, setSelectedShuffleCategories] = useState([]);
     const [isShuffleModeActive, setIsShuffleModeActive] = useState(false);
     const [currentShuffleMode, setCurrentShuffleMode] = useState(null);
     const [shuffledPlaylist, setShuffledPlaylist] = useState([]);
     const [toastMessage, setToastMessage] = useState(null);
     const [categoryToDelete, setCategoryToDelete] = useState(null);
+    const [sidebarSearchQuery, setSidebarSearchQuery] = useState('');
     const lastSeekTime = useRef(0);
+
+    const touchStartY = useRef(null);
+    const touchStartX = useRef(null);
+    const touchThrottled = useRef(false);
+
+    const handleTouchStart = (e) => {
+        if (e.touches && e.touches.length === 1) {
+            touchStartY.current = e.touches[0].clientY;
+            touchStartX.current = e.touches[0].clientX;
+        }
+    };
+
+    const handleTouchEnd = (e) => {
+        if (touchStartY.current === null || touchStartX.current === null) return;
+        if (!e.changedTouches || e.changedTouches.length === 0) return;
+
+        const touchEndY = e.changedTouches[0].clientY;
+        const touchEndX = e.changedTouches[0].clientX;
+
+        const deltaY = touchStartY.current - touchEndY;
+        const deltaX = touchStartX.current - touchEndX;
+
+        touchStartY.current = null;
+        touchStartX.current = null;
+
+        if (touchThrottled.current) return;
+
+        if (Math.abs(deltaY) > Math.abs(deltaX) && Math.abs(deltaY) > 35) {
+            touchThrottled.current = true;
+            setTimeout(() => { touchThrottled.current = false; }, 350);
+            if (deltaY > 0) {
+                advanceFeed(1);
+            } else {
+                advanceFeed(-1);
+            }
+        }
+    };
 
     // Ensure theater-mode is cleared and sidebar is expanded by default
     useEffect(() => {
@@ -214,14 +253,25 @@ const ScrollFeedView = ({
 
     const sortedCategories = useMemo(() => {
         const counts = {};
-        allCategories.forEach(cat => counts[cat] = getCategoryCount(cat));
+        displayedItems.forEach(item => {
+            const pTags = imageTags[item.name] || [];
+            const sTags = imageSecondaryTags[item.name] || [];
+            if (pTags.length === 0 && sTags.length === 0) {
+                counts['Uncategorized'] = (counts['Uncategorized'] || 0) + 1;
+            } else {
+                const itemCats = new Set([...pTags, ...sTags]);
+                itemCats.forEach(cat => {
+                    counts[cat] = (counts[cat] || 0) + 1;
+                });
+            }
+        });
         
         return [...allCategories].sort((a, b) => {
             if (a === 'Uncategorized') return -1;
             if (b === 'Uncategorized') return 1;
             
-            const countA = counts[a];
-            const countB = counts[b];
+            const countA = counts[a] || 0;
+            const countB = counts[b] || 0;
             
             if (countA === 0 && countB !== 0) return 1;
             if (countB === 0 && countA !== 0) return -1;
@@ -229,6 +279,48 @@ const ScrollFeedView = ({
             return a.localeCompare(b);
         });
     }, [allCategories, displayedItems, imageTags, imageSecondaryTags]);
+
+    // Ignore Empty Folders: Automatically initialize to first non-empty category
+    useEffect(() => {
+        if (sortedCategories.length > 0) {
+            const currentCount = getCategoryCount(selectedCategory);
+            if (currentCount === 0) {
+                const firstNonEmpty = sortedCategories.find(cat => getCategoryCount(cat) > 0);
+                if (firstNonEmpty && firstNonEmpty !== selectedCategory) {
+                    setSelectedCategory(firstNonEmpty);
+                    setActiveIndex(0);
+                }
+            }
+        }
+    }, [sortedCategories, selectedCategory]);
+
+    // Custom Event Listener for Global Search overlay selection
+    useEffect(() => {
+        const handleSelectCategoryEvent = (e) => {
+            if (e.detail) {
+                setSelectedCategory(e.detail);
+                if (e.item) {
+                    const idx = feedItems.findIndex(i => i.name === e.item);
+                    if (idx !== -1) {
+                        setActiveIndex(idx);
+                    } else {
+                        setActiveIndex(0);
+                    }
+                } else {
+                    setActiveIndex(0);
+                }
+                if (isShuffleModeActive) stopShuffle();
+            }
+        };
+        window.addEventListener('select-scroll-category', handleSelectCategoryEvent);
+        return () => window.removeEventListener('select-scroll-category', handleSelectCategoryEvent);
+    }, [feedItems, isShuffleModeActive]);
+
+    const displayedCategoriesInSidebar = useMemo(() => {
+        if (!sidebarSearchQuery.trim()) return sortedCategories;
+        const q = sidebarSearchQuery.trim().toLowerCase();
+        return sortedCategories.filter(cat => cat.toLowerCase().includes(q));
+    }, [sortedCategories, sidebarSearchQuery]);
 
     const advanceFeed = (direction) => {
         if (direction > 0) {
@@ -276,19 +368,11 @@ const ScrollFeedView = ({
                 e.target.closest('.sidebar') || 
                 e.target.closest('.metadata-panel')) return;
             
-            // Determine active video element anywhere on page
             const mediaContainer = e.target.closest('.viewer-media-container') || e.target.closest('.landscape-viewer') || e.target.closest('.portrait-viewer') || document.querySelector('.viewer-media-container');
-            if (mediaContainer && e.clientX > mediaContainer.getBoundingClientRect().right) return;
+            if (e.clientX > (window.innerWidth * 0.85)) return;
 
             const videoEl = mediaContainer ? (mediaContainer.querySelector('video') || document.querySelector('video')) : document.querySelector('video');
-            
-            let isLeftHalf = false;
-            if (mediaContainer) {
-                const rect = mediaContainer.getBoundingClientRect();
-                isLeftHalf = e.clientX < (rect.left + rect.width / 2);
-            } else {
-                isLeftHalf = e.clientX < (window.innerWidth / 2);
-            }
+            let isLeftHalf = e.clientX < (window.innerWidth * 0.5);
 
             if (isLeftHalf && videoEl) {
                 e.preventDefault();
@@ -350,20 +434,22 @@ const ScrollFeedView = ({
 
             if (e.key === 'PageDown') {
                 e.preventDefault();
-                if (sortedCategories && sortedCategories.length > 0) {
-                    const currIndex = sortedCategories.indexOf(selectedCategory);
-                    const nextIndex = (currIndex + 1) % sortedCategories.length;
-                    const nextCat = sortedCategories[nextIndex];
+                const validCats = sortedCategories.filter(c => getCategoryCount(c) > 0);
+                if (validCats.length > 0) {
+                    const currIndex = validCats.indexOf(selectedCategory);
+                    const nextIndex = (currIndex + 1) % validCats.length;
+                    const nextCat = validCats[nextIndex];
                     setSelectedCategory(nextCat);
                     setActiveIndex(0);
                     showToast(`Now playing videos from category: ${nextCat}`);
                 }
             } else if (e.key === 'PageUp') {
                 e.preventDefault();
-                if (sortedCategories && sortedCategories.length > 0) {
-                    const currIndex = sortedCategories.indexOf(selectedCategory);
-                    const prevIndex = (currIndex - 1 + sortedCategories.length) % sortedCategories.length;
-                    const prevCat = sortedCategories[prevIndex];
+                const validCats = sortedCategories.filter(c => getCategoryCount(c) > 0);
+                if (validCats.length > 0) {
+                    const currIndex = validCats.indexOf(selectedCategory);
+                    const prevIndex = (currIndex - 1 + validCats.length) % validCats.length;
+                    const prevCat = validCats[prevIndex];
                     setSelectedCategory(prevCat);
                     setActiveIndex(0);
                     showToast(`Now playing videos from category: ${prevCat}`);
@@ -386,10 +472,17 @@ const ScrollFeedView = ({
             }
         };
 
+        const handleToggleLeft = () => setIsSidebarCollapsed(prev => !prev);
+        const handleToggleRight = () => setIsInfoPanelOpen(prev => !prev);
+
+        window.addEventListener('toggle-left-sidebar', handleToggleLeft);
+        window.addEventListener('toggle-right-sidebar', handleToggleRight);
         window.addEventListener('wheel', handleWheel, { capture: true, passive: false });
         window.addEventListener('keydown', handleKeyDown, { capture: true });
 
         return () => {
+            window.removeEventListener('toggle-left-sidebar', handleToggleLeft);
+            window.removeEventListener('toggle-right-sidebar', handleToggleRight);
             window.removeEventListener('wheel', handleWheel, { capture: true });
             window.removeEventListener('keydown', handleKeyDown, { capture: true });
         };
@@ -405,7 +498,7 @@ const ScrollFeedView = ({
     }
 
     return (
-        <div className="media-controller-layout" style={{ display: 'flex', height: '100%', overflow: 'hidden', paddingTop: '70px', boxSizing: 'border-box' }}>
+        <div className="media-controller-layout" style={{ display: 'flex', height: '100%', overflow: 'hidden', paddingTop: '0px', boxSizing: 'border-box' }}>
             <style>
                 {`
                 @keyframes slideDownFade {
@@ -466,39 +559,6 @@ const ScrollFeedView = ({
 
             {true && (
                 <>
-                    {isSidebarCollapsed && (
-                        <div className="category-sidebar-collapsed" style={{ width: '60px', background: 'var(--bg-color)', borderRight: '1px solid rgba(255,255,255,0.1)', display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: '20px', zIndex: 20 }}>
-                            <button 
-                                onClick={() => {
-                                    setIsSidebarCollapsed(false);
-                                    if (document.body.classList.contains('theater-mode')) {
-                                        document.body.classList.add('theater-sidebar-open');
-                                        const app = document.querySelector('.app-container');
-                                        if (app) app.classList.add('theater-sidebar-open');
-                                    }
-                                }} 
-                                style={{ 
-                                    background: 'rgba(59, 130, 246, 0.25)', 
-                                    border: '1px solid rgba(59, 130, 246, 0.5)', 
-                                    borderRadius: '10px', 
-                                    color: '#ffffff', 
-                                    cursor: 'pointer', 
-                                    padding: '10px', 
-                                    display: 'flex', 
-                                    alignItems: 'center', 
-                                    justifyContent: 'center',
-                                    boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)'
-                                }} 
-                                title="Expand Categories Sidebar (Hamburger Menu)"
-                            >
-                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                                    <line x1="3" y1="12" x2="21" y2="12"></line>
-                                    <line x1="3" y1="6" x2="21" y2="6"></line>
-                                    <line x1="3" y1="18" x2="21" y2="18"></line>
-                                </svg>
-                            </button>
-                        </div>
-                    )}
                     <div className="category-sidebar" style={{ width: isSidebarCollapsed ? '0px' : '300px', minWidth: isSidebarCollapsed ? '0px' : '300px', display: !isSidebarCollapsed ? 'flex' : 'none', background: 'var(--bg-color)', borderRight: '1px solid rgba(255,255,255,0.1)', overflowY: 'auto', flexDirection: 'column' }}>
                         <h3 style={{ padding: '16px 20px', margin: 0, position: 'sticky', top: 0, background: '#090d16', zIndex: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
                             <span style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '1.1rem', fontWeight: 700 }}>
@@ -537,8 +597,39 @@ const ScrollFeedView = ({
                                 <span>Minimize</span>
                             </button>
                         </h3>
+                        {/* Sidebar Search Bar (Minimize button -> Search bar -> existing sidebar content) */}
+                        <div className="sidebar-search-container">
+                            <div className="sidebar-search-wrapper">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                                    <circle cx="11" cy="11" r="8"></circle>
+                                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                                </svg>
+                                <input 
+                                    type="text"
+                                    className="sidebar-search-input"
+                                    placeholder="Search categories..."
+                                    value={sidebarSearchQuery}
+                                    onChange={e => setSidebarSearchQuery(e.target.value)}
+                                />
+                                {sidebarSearchQuery && (
+                                    <button 
+                                        type="button"
+                                        className="sidebar-search-clear" 
+                                        onClick={() => setSidebarSearchQuery('')}
+                                        title="Clear search"
+                                    >
+                                        ✕
+                                    </button>
+                                )}
+                            </div>
+                        </div>
                         <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-                            {sortedCategories.map(tag => (
+                            {displayedCategoriesInSidebar.length === 0 ? (
+                                <li style={{ padding: '16px 20px', textAlign: 'center', color: 'var(--text-subtle)', fontSize: '0.85rem' }}>
+                                    No matching categories
+                                </li>
+                            ) : (
+                                displayedCategoriesInSidebar.map(tag => (
                                 <li key={tag} 
                                     onClick={() => handleCategoryClick(tag)}
                                     style={{ 
@@ -591,7 +682,7 @@ const ScrollFeedView = ({
                                         )}
                                     </span>
                                 </li>
-                            ))}
+                            )))}
                         </ul>
                         <div style={{ padding: '15px 20px', marginTop: 'auto', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
                             {isCreatingCategory ? (
@@ -634,7 +725,7 @@ const ScrollFeedView = ({
                 </>
             )}
             
-            <div className="viewer-orchestrator" style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#000', minHeight: 0, minWidth: 0 }}>
+            <div className="viewer-orchestrator" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd} style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#000', minHeight: 0, minWidth: 0, touchAction: 'none' }}>
                 {feedItems.length === 0 ? (
                     <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
                         <p className="text-subtle">No media found for this category.</p>
@@ -667,6 +758,9 @@ const ScrollFeedView = ({
                         togglePin={togglePin}
                         deleteImage={deleteImage}
                         pinnedImages={pinnedImages}
+                        isInfoPanelOpen={isInfoPanelOpen}
+                        setIsInfoPanelOpen={setIsInfoPanelOpen}
+                        isSidebarCollapsed={isSidebarCollapsed}
                     />
                 )}
             </div>

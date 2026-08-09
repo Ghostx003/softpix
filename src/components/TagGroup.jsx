@@ -57,11 +57,10 @@ const TagGroup = ({ title, availableTags, selectedTags = [], activeColor = '#3b8
                                 className="available-tag-btn"
                                 style={{
                                     backgroundColor: isSelected ? activeColor : 'var(--bg-tertiary)',
-                                    borderColor: isSelected ? activeColor : 'rgba(255, 255, 255, 0.1)',
+                                    border: `1px solid ${isSelected ? activeColor : 'rgba(255, 255, 255, 0.1)'}`,
                                     color: isSelected ? '#ffffff' : 'var(--text-secondary)',
                                     boxShadow: isSelected ? `0 2px 8px ${activeGlow}` : 'none',
                                     padding: '0.35rem 0.8rem',
-                                    border: '1px solid',
                                     borderRadius: '999px',
                                     fontSize: '0.78rem',
                                     fontWeight: isSelected ? 600 : 500,

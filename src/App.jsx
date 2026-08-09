@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import Navbar from './components/Navbar';
 import Sidebar from './components/Sidebar';
 import TagBar from './components/TagBar';
@@ -9,13 +9,16 @@ import NameModal from './components/NameModal';
 import ExportModal from './components/ExportModal';
 import FolderModal from './components/FolderModal';
 import ShortcutsModal from './components/ShortcutsModal';
+import SearchOverlay from './components/SearchOverlay';
+import { getItemCategory } from './utils/searchUtils';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { useFileSystem } from './hooks/useFileSystem';
+import { useNetworkSync } from './hooks/useNetworkSync';
 import './index.css';
 
 function App() {
     // --- Global State ---
-    const [userName, setUserName] = useLocalStorage('softpixUserName', '');
+    const [userName, setUserName] = useLocalStorage('softpixUserName', 'User');
     const [userAvatar, setUserAvatar] = useLocalStorage('softpixUserAvatar', '');
     const [currentTheme, setCurrentTheme] = useLocalStorage('softpixAccentColor', 'green');
     const [columnCount, setColumnCount] = useLocalStorage('softpixGridColumns', 'auto');
@@ -33,10 +36,29 @@ function App() {
 
     const { localFiles, folders, addFolder, toggleFolder, removeFolder, isPrompting, pendingHandle, resumeSession } = useFileSystem();
 
+    const { isRemoteClient, remoteCatalog } = useNetworkSync({
+        localFiles,
+        folders,
+        pinnedImages,
+        imageRatings,
+        imageTags,
+        imageBookmarks,
+        imagePopularity,
+        externalUrls,
+        customCategories: []
+    });
+
+    const effectiveLocalFiles = isRemoteClient && remoteCatalog?.files ? remoteCatalog.files : localFiles;
+    const effectiveFolders = isRemoteClient && remoteCatalog?.folders ? remoteCatalog.folders : folders;
+    const effectiveRatings = isRemoteClient && remoteCatalog?.imageRatings ? remoteCatalog.imageRatings : imageRatings;
+    const effectiveBookmarks = isRemoteClient && remoteCatalog?.imageBookmarks ? remoteCatalog.imageBookmarks : imageBookmarks;
+    const effectiveTags = isRemoteClient && remoteCatalog?.imageTags ? remoteCatalog.imageTags : imageTags;
+
     // --- UI State ---
     const [isGlobalMute, setIsGlobalMute] = useState(true);
     const [isLoopEnabled, setIsLoopEnabled] = useLocalStorage('isLoopEnabled', true);
     const toggleLoop = () => setIsLoopEnabled(prev => !prev);
+    const [isComfortView, setIsComfortView] = useState(false);
     const [currentTypeFilter, setTypeFilter] = useState('all');
     const [sortBy, setSortBy] = useState('pinned');
     const [activeFilterTags, setActiveFilterTags] = useState([]);
@@ -47,7 +69,20 @@ function App() {
     const [modalIndex, setModalIndex] = useState(-1);
     const [isExportModalOpen, setIsExportModalOpen] = useState(false);
     const [isFolderModalOpen, setIsFolderModalOpen] = useState(false);
-    const [isAutoShuffleOn, setAutoShuffleOn] = useState(false);
+    const [shuffleMode, setShuffleMode] = useLocalStorage('softpixPlayerShuffleMode', 'off');
+    const cycleShuffleMode = () => {
+        setShuffleMode(prev => {
+            if (prev === 'off') return 'category';
+            if (prev === 'category') return 'global';
+            return 'off';
+        });
+    };
+    const isAutoShuffleOn = shuffleMode !== 'off';
+    const setAutoShuffleOn = (val) => setShuffleMode(val ? 'global' : 'off');
+    const [ignoredCategories, setIgnoredCategories] = useLocalStorage('softpixIgnoredCategories', []);
+    const toggleIgnoreCategory = (cat) => {
+        setIgnoredCategories(prev => prev.includes(cat) ? prev.filter(c => c !== cat) : [...prev, cat]);
+    };
     const [resumeTimes, setResumeTimes] = useState({});
     const [customCategories, setCustomCategories] = useState([]);
     const [scrollShuffleMenuOpen, setScrollShuffleMenuOpen] = useState(false);
@@ -55,6 +90,7 @@ function App() {
     const [shuffledItems, setShuffledItems] = useState(null);
     const [isHeaderVisible, setIsHeaderVisible] = useState(true);
     const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
+    const [isSearchOverlayOpen, setIsSearchOverlayOpen] = useState(false);
     const shuffleHistoryRef = useRef([]);
     const shufflePointerRef = useRef(-1);
     const lastBottomShuffleTime = useRef(0);
@@ -67,31 +103,42 @@ function App() {
         }
     };
 
+    const isHeaderVisibleRef = useRef(true);
+    const scrollRafRef = useRef(null);
+
     const handleGridScroll = (e) => {
         const target = e.target;
-        const scrollTop = target.scrollTop;
-        if (scrollTop > 60) {
-            setIsHeaderVisible(false);
-        } else {
-            setIsHeaderVisible(true);
-        }
+        if (scrollRafRef.current) return;
+        
+        scrollRafRef.current = requestAnimationFrame(() => {
+            scrollRafRef.current = null;
+            if (!target) return;
+            const scrollTop = target.scrollTop;
+            const shouldBeVisible = scrollTop <= 60;
+            
+            if (isHeaderVisibleRef.current !== shouldBeVisible) {
+                isHeaderVisibleRef.current = shouldBeVisible;
+                setIsHeaderVisible(shouldBeVisible);
+            }
 
-        const scrollHeight = target.scrollHeight;
-        const clientHeight = target.clientHeight;
-        const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+            const scrollHeight = target.scrollHeight;
+            const clientHeight = target.clientHeight;
+            const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+            const now = Date.now();
 
-        const now = Date.now();
-        if (scrollHeight > clientHeight + 100 && distanceFromBottom < 40 && now - lastBottomShuffleTime.current > 1000) {
-            lastBottomShuffleTime.current = now;
-            shuffleGrid();
-            target.scrollTop = 0;
-            setIsHeaderVisible(true);
-        }
+            if (scrollHeight > clientHeight + 100 && distanceFromBottom < 40 && now - lastBottomShuffleTime.current > 1000) {
+                lastBottomShuffleTime.current = now;
+                shuffleGrid();
+                target.scrollTop = 0;
+                isHeaderVisibleRef.current = true;
+                setIsHeaderVisible(true);
+            }
+        });
     };
 
     useEffect(() => {
         setShuffledItems(null);
-    }, [localFiles, externalUrls, sortBy, currentTypeFilter, activeFilterTags]);
+    }, [effectiveLocalFiles, externalUrls, sortBy, currentTypeFilter, activeFilterTags]);
 
     const shuffleGrid = () => {
         let itemsToShuffle = [...displayedItems];
@@ -123,6 +170,14 @@ function App() {
     // --- Global M key shortcut to toggle mute ---
     useEffect(() => {
         const handleKeyDown = (e) => {
+            if ((e.ctrlKey || e.metaKey) && (e.code === 'Space' || e.key === ' ' || e.keyCode === 32)) {
+                e.preventDefault();
+                e.stopPropagation();
+                setIsSearchOverlayOpen(prev => !prev);
+                return;
+            }
+
+            if (e.defaultPrevented) return;
             const activeEl = document.activeElement;
             const isInputFocused = activeEl && (
                 activeEl.tagName === 'INPUT' || 
@@ -136,20 +191,101 @@ function App() {
                 setIsGlobalMute(prev => !prev);
             } else if (e.key === '/') {
                 e.preventDefault();
+                e.stopPropagation();
                 setIsShortcutsOpen(prev => !prev);
+            } else if (e.key === '[') {
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                window.dispatchEvent(new CustomEvent('toggle-left-sidebar'));
+            } else if (e.key === ']') {
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                window.dispatchEvent(new CustomEvent('toggle-right-sidebar'));
+            } else if (e.key === 'f' || e.key === 'F') {
+                e.preventDefault();
+                const targetElement = document.documentElement;
+                if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+                    if (targetElement.requestFullscreen) targetElement.requestFullscreen().catch(() => {});
+                    else if (targetElement.webkitRequestFullscreen) targetElement.webkitRequestFullscreen();
+                } else {
+                    if (document.exitFullscreen) document.exitFullscreen().catch(() => {});
+                    else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+                }
             }
         };
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
+        window.addEventListener('keydown', handleKeyDown, true);
+        return () => window.removeEventListener('keydown', handleKeyDown, true);
     }, []);
+
+    // --- Global Fullscreen Cleanup & Navbar Restoration ---
+    useEffect(() => {
+        const handleFullscreenChange = () => {
+            const isFS = !!(document.fullscreenElement || document.webkitFullscreenElement);
+            if (!isFS) {
+                document.body.classList.remove('fullscreen', 'theater-mode', 'theater-sidebar-open');
+                const app = document.querySelector('.app-container');
+                if (app) app.classList.remove('fullscreen', 'theater-mode', 'theater-sidebar-open');
+                setIsHeaderVisible(true);
+            }
+        };
+
+        document.addEventListener('fullscreenchange', handleFullscreenChange);
+        document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+        return () => {
+            document.removeEventListener('fullscreenchange', handleFullscreenChange);
+            document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+        };
+    }, []);
+
+    // --- History API State Management for Android Back Button Parity ---
+    const isPushedStateRef = useRef(false);
+
+    useEffect(() => {
+        if (modalIndex !== -1) {
+            if (!isPushedStateRef.current) {
+                window.history.pushState({ softpixModal: true }, '');
+                isPushedStateRef.current = true;
+            }
+        } else {
+            isPushedStateRef.current = false;
+        }
+    }, [modalIndex]);
+
+    useEffect(() => {
+        const handlePopState = () => {
+            const isFS = !!(
+                document.fullscreenElement || 
+                document.webkitFullscreenElement || 
+                document.body.classList.contains('fullscreen') ||
+                document.body.classList.contains('theater-mode')
+            );
+
+            if (isFS) {
+                if (document.exitFullscreen) {
+                    document.exitFullscreen().catch(() => {});
+                } else if (document.webkitExitFullscreen) {
+                    document.webkitExitFullscreen();
+                }
+                document.body.classList.remove('fullscreen', 'theater-mode', 'theater-sidebar-open');
+                const app = document.querySelector('.app-container');
+                if (app) app.classList.remove('fullscreen', 'theater-mode', 'theater-sidebar-open');
+                setIsHeaderVisible(true);
+            } else if (modalIndex !== -1) {
+                setModalIndex(-1);
+            }
+        };
+
+        window.addEventListener('popstate', handlePopState);
+        return () => window.removeEventListener('popstate', handlePopState);
+    }, [modalIndex]);
 
     // --- Merge Folder Tags into Image Tags ---
     useEffect(() => {
-        if (localFiles.length === 0) return;
+        if (effectiveLocalFiles.length === 0) return;
         setImageTags(prevTags => {
             let tagsChanged = false;
             const newTags = { ...prevTags };
-            localFiles.forEach(file => {
+            effectiveLocalFiles.forEach(file => {
                 if (file.folderTags && file.folderTags.length > 0) {
                     const currentFileTags = newTags[file.name] || [];
                     const mergedTags = new Set(currentFileTags);
@@ -166,11 +302,11 @@ function App() {
             });
             return tagsChanged ? newTags : prevTags;
         });
-    }, [localFiles, setImageTags, removedTags]);
+    }, [effectiveLocalFiles, setImageTags, removedTags]);
 
     // --- Media Data ---
     const baseItems = useMemo(() => {
-        let items = [...localFiles];
+        let items = [...effectiveLocalFiles];
 
         externalUrls.forEach(url => {
             const name = url.split('/').pop().split('?')[0] || url;
@@ -192,7 +328,7 @@ function App() {
         // 1. Sort
         if (sortBy.startsWith('rating-')) {
             const targetRating = parseInt(sortBy.split('-')[1]);
-            items = items.filter(item => (imageRatings[item.name] || 0) === targetRating);
+            items = items.filter(item => (effectiveRatings[item.name] || 0) === targetRating);
         } else {
             items.sort((a, b) => {
                 if (sortBy === 'pinned') {
@@ -208,7 +344,7 @@ function App() {
         }
 
         return items;
-    }, [localFiles, externalUrls, sortBy, pinnedImages, imageRatings, imagePopularity, deletedImages]);
+    }, [effectiveLocalFiles, externalUrls, sortBy, pinnedImages, effectiveRatings, imagePopularity, deletedImages]);
 
     const displayedItems = useMemo(() => {
         if (shuffledItems !== null) {
@@ -373,24 +509,122 @@ function App() {
     // --- Modal Item Callbacks ---
     const activeItem = displayedItems[modalIndex];
 
+    // --- Smart Multi-Tag Shuffle Index & Category Resolution ---
+    const allCategoriesWithCounts = useMemo(() => {
+        const counts = {};
+        displayedItems.forEach(item => {
+            const pTags = imageTags[item.name] || [];
+            const sTags = imageSecondaryTags[item.name] || [];
+            if (pTags.length === 0 && sTags.length === 0) {
+                counts['Uncategorized'] = (counts['Uncategorized'] || 0) + 1;
+            } else {
+                const itemCats = new Set([...pTags, ...sTags]);
+                itemCats.forEach(cat => {
+                    counts[cat] = (counts[cat] || 0) + 1;
+                });
+            }
+        });
+
+        return uniqueTags.map(tag => ({
+            category: tag,
+            count: counts[tag] || 0
+        })).sort((a, b) => b.count - a.count);
+    }, [uniqueTags, displayedItems, imageTags, imageSecondaryTags]);
+
+    const tagIndex = useMemo(() => {
+        const map = new Map();
+        displayedItems.forEach(item => {
+            const pTags = imageTags[item.name] || [];
+            const sTags = imageSecondaryTags[item.name] || [];
+            const fTags = item.folderTags || [];
+            const allTags = new Set([...pTags, ...sTags, ...fTags]);
+
+            allTags.forEach(t => {
+                if (!map.has(t)) map.set(t, new Set());
+                map.get(t).add(item.name);
+            });
+        });
+        return map;
+    }, [displayedItems, imageTags, imageSecondaryTags]);
+
+    const getValidItemTags = useCallback((itemName) => {
+        if (!itemName) return [];
+        const item = displayedItems.find(i => i.name === itemName);
+        if (!item) return [];
+        const pTags = imageTags[itemName] || [];
+        const sTags = imageSecondaryTags[itemName] || [];
+        const fTags = item.folderTags || [];
+        const allTags = [...new Set([...pTags, ...sTags, ...fTags])];
+        return allTags.filter(t => !ignoredCategories.includes(t));
+    }, [displayedItems, imageTags, imageSecondaryTags, ignoredCategories]);
+
     const showNext = () => {
         if (displayedItems.length <= 1) return;
-        if (isAutoShuffleOn && activeItem && !pinnedImages.includes(activeItem.name)) {
-            // If user previously went back in history and is now advancing forward, use history
+        if (shuffleMode !== 'off' && activeItem && !pinnedImages.includes(activeItem.name)) {
             if (shufflePointerRef.current < shuffleHistoryRef.current.length - 1) {
                 shufflePointerRef.current += 1;
                 const nextHistIndex = shuffleHistoryRef.current[shufflePointerRef.current];
                 setModalIndex(nextHistIndex);
-            } else {
-                // Otherwise pick a brand new random item and record it in history
-                let nextRandomIndex;
-                do { 
-                    nextRandomIndex = Math.floor(Math.random() * displayedItems.length); 
-                } while (nextRandomIndex === modalIndex && displayedItems.length > 1);
-                
-                shuffleHistoryRef.current.push(nextRandomIndex);
+                return;
+            }
+
+            let candidates = [];
+
+            if (shuffleMode === 'category') {
+                const validTags = getValidItemTags(activeItem.name);
+                if (validTags.length > 0) {
+                    const candidateNames = new Set();
+                    validTags.forEach(tag => {
+                        const matchedSet = tagIndex.get(tag);
+                        if (matchedSet) {
+                            matchedSet.forEach(name => {
+                                if (name !== activeItem.name && !deletedImages.includes(name)) {
+                                    candidateNames.add(name);
+                                }
+                            });
+                        }
+                    });
+
+                    candidates = displayedItems.filter(i => candidateNames.has(i.name));
+
+                    if (candidates.length === 0) {
+                        const availableNonIgnoredTags = uniqueTags.filter(t => !ignoredCategories.includes(t));
+                        if (availableNonIgnoredTags.length > 0) {
+                            const randomCategory = availableNonIgnoredTags[Math.floor(Math.random() * availableNonIgnoredTags.length)];
+                            const catSet = tagIndex.get(randomCategory);
+                            if (catSet) {
+                                candidates = displayedItems.filter(i => catSet.has(i.name) && i.name !== activeItem.name);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Global Shuffle mode OR Fallback
+            if (shuffleMode === 'global' || candidates.length === 0) {
+                candidates = displayedItems.filter(item => {
+                    if (item.name === activeItem.name) return false;
+                    const vTags = getValidItemTags(item.name);
+                    const rawTags = [...(imageTags[item.name] || []), ...(imageSecondaryTags[item.name] || []), ...(item.folderTags || [])];
+                    if (rawTags.length > 0 && vTags.length === 0) return false; // Exclude ignored-only items
+                    return true;
+                });
+            }
+
+            if (candidates.length === 0) {
+                candidates = displayedItems.filter(i => i.name !== activeItem.name);
+            }
+
+            if (candidates.length > 0) {
+                const nextItem = candidates[Math.floor(Math.random() * candidates.length)];
+                const nextIndex = displayedItems.findIndex(i => i.name === nextItem.name);
+                const targetIndex = nextIndex !== -1 ? nextIndex : (modalIndex + 1) % displayedItems.length;
+
+                shuffleHistoryRef.current.push(targetIndex);
                 shufflePointerRef.current = shuffleHistoryRef.current.length - 1;
-                setModalIndex(nextRandomIndex);
+                setModalIndex(targetIndex);
+            } else {
+                setModalIndex((modalIndex + 1) % displayedItems.length);
             }
         } else {
             setModalIndex((modalIndex + 1) % displayedItems.length);
@@ -524,7 +758,7 @@ function App() {
     };
 
     return (
-        <div className="app-container" style={{ position: 'relative', height: '100vh', overflow: 'hidden', width: '100%' }}>
+        <div className="app-container" style={{ position: 'relative', height: '100dvh', overflow: 'hidden', width: '100%' }}>
             <div className={`header-wrapper ${isHeaderVisible ? '' : 'hidden-header'}`}>
                 <Navbar 
                     isGlobalMute={isGlobalMute} toggleGlobalMute={() => setIsGlobalMute(!isGlobalMute)}
@@ -532,6 +766,7 @@ function App() {
                     isPlayAll={isPlayAll} togglePlayAll={() => setIsPlayAll(!isPlayAll)}
                     currentTypeFilter={currentTypeFilter} setTypeFilter={setTypeFilter}
                     columnCount={columnCount} setColumnCount={setColumnCount}
+                    isComfortView={isComfortView} toggleComfortView={() => setIsComfortView(!isComfortView)}
                     sortBy={sortBy} setSortBy={setSortBy}
                     selectFolder={() => setIsFolderModalOpen(true)} toggleSidebar={() => setIsSidebarOpen(true)}
                     currentView={currentView} setCurrentView={setCurrentView}
@@ -547,11 +782,12 @@ function App() {
             </div>
             <main style={{ height: '100%', width: '100%', overflow: 'hidden' }}>
                 {currentView === 'grid' && (
-                    <div onScroll={handleGridScroll} style={{ paddingTop: '125px', paddingLeft: '20px', paddingRight: '20px', paddingBottom: '20px', overflowY: 'auto', height: '100%', boxSizing: 'border-box' }}>
+                    <div className="grid-scroll-container" onScroll={handleGridScroll} style={{ paddingTop: '125px', paddingBottom: '20px', overflowY: 'auto', height: '100%', boxSizing: 'border-box' }}>
                         <ImageGrid 
                             displayedItems={displayedItems} openModal={openModalIndex} 
                             togglePin={togglePin} deleteImage={deleteImage} 
                             pinnedImages={pinnedImages} isGlobalMute={isGlobalMute} columnCount={columnCount}
+                            isComfortView={isComfortView}
                             isPrompting={isPrompting} resumeSession={resumeSession} resumeFolderName={pendingHandle?.name}
                             isPlayAll={isPlayAll && modalIndex === -1}
                             imageRatings={imageRatings}
@@ -599,9 +835,10 @@ function App() {
             <Sidebar 
                 isOpen={isSidebarOpen} closeSidebar={() => setIsSidebarOpen(false)}
                 currentTheme={currentTheme} setTheme={setCurrentTheme}
-                userName={userName} setUserName={setUserName}
-                userAvatar={userAvatar} setUserAvatar={setUserAvatar}
-                addImageUrl={addImageUrl} handleExport={handleExport} handleImport={handleImport}
+                handleExport={handleExport} handleImport={handleImport}
+                allCategoriesWithCounts={allCategoriesWithCounts}
+                ignoredCategories={ignoredCategories}
+                toggleIgnoreCategory={toggleIgnoreCategory}
             />
             <ImageModal 
                 isOpen={modalIndex !== -1} closeModal={() => setModalIndex(-1)}
@@ -619,6 +856,7 @@ function App() {
                 toggleLoop={toggleLoop}
                 rating={activeItem ? (imageRatings[activeItem.name] || 0) : 0} setRating={setRating} trackPopularity={trackPopularity}
                 isAutoShuffleOn={isAutoShuffleOn} setAutoShuffleOn={setAutoShuffleOn}
+                shuffleMode={shuffleMode} cycleShuffleMode={cycleShuffleMode}
                 isGlobalMute={isGlobalMute}
                 togglePin={togglePin}
                 isPinned={activeItem ? (pinnedImages.includes(activeItem.name) || pinnedImages.includes(activeItem.id)) : false}
@@ -638,12 +876,37 @@ function App() {
             <FolderModal 
                 isOpen={isFolderModalOpen}
                 closeModal={() => setIsFolderModalOpen(false)}
-                folders={folders}
+                folders={effectiveFolders}
                 addFolder={addFolder}
                 toggleFolder={toggleFolder}
                 removeFolder={removeFolder}
             />
             <ShortcutsModal isOpen={isShortcutsOpen} closeModal={() => setIsShortcutsOpen(false)} />
+            <SearchOverlay 
+                isOpen={isSearchOverlayOpen}
+                closeModal={() => setIsSearchOverlayOpen(false)}
+                allCategoriesWithCounts={allCategoriesWithCounts}
+                items={baseItems}
+                imageTags={imageTags}
+                imageSecondaryTags={imageSecondaryTags}
+                onSelectCategory={(categoryName) => {
+                    setActiveFilterTags([categoryName]);
+                    window.dispatchEvent(new CustomEvent('select-scroll-category', { detail: categoryName }));
+                }}
+                onSelectVideo={(item) => {
+                    if (!item) return;
+                    const cat = getItemCategory(item.name, imageTags, imageSecondaryTags, item);
+                    setActiveFilterTags(cat ? [cat] : []);
+                    const idx = displayedItems.findIndex(i => i.name === item.name);
+                    if (idx !== -1) {
+                        openModalIndex(idx);
+                    } else {
+                        const baseIdx = baseItems.findIndex(i => i.name === item.name);
+                        if (baseIdx !== -1) openModalIndex(baseIdx);
+                    }
+                    window.dispatchEvent(new CustomEvent('select-scroll-category', { detail: cat, item: item.name }));
+                }}
+            />
         </div>
     );
 }
