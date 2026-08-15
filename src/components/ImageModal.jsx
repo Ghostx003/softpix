@@ -159,16 +159,32 @@ const ImageModal = ({
 
             e.preventDefault();
             const now = Date.now();
+
+            const isLeftHalf = e.clientX < (window.innerWidth / 2);
+            if (isLeftHalf && item?.isVideo) {
+                if (now - lastScrollTime.current < 120) return;
+                lastScrollTime.current = now;
+                
+                const videoEl = document.querySelector('.modal-main-content video');
+                if (videoEl && Math.abs(e.deltaY) > 5) {
+                    if (e.deltaY < 0) {
+                        videoEl.currentTime = Math.min(videoEl.duration || Infinity, videoEl.currentTime + 10);
+                    } else {
+                        videoEl.currentTime = Math.max(0, videoEl.currentTime - 10);
+                    }
+                }
+                return;
+            }
+
             if (now - lastScrollTime.current < 250) return;
             if (Math.abs(e.deltaY) < 10) return;
 
             lastScrollTime.current = now;
-            const isLeftHalf = e.clientX < (window.innerWidth / 2);
 
-            if (isLeftHalf) {
-                showPrev();
-            } else {
+            if (e.deltaY > 0) {
                 showNext();
+            } else {
+                showPrev();
             }
         };
 

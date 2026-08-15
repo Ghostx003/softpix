@@ -91,23 +91,34 @@ export function wifiSyncPlugin() {
         name: 'wifi-sync-server',
         configureServer(server) {
             const ips = getLocalIpAddresses();
-            console.log('\n-------------------------------------------------------------');
-            console.log('  📱 SoftPix Wi-Fi Automated Disk & Media Server Active!');
-            console.log('  Connect on phone/tablet (same Wi-Fi):');
-            ips.forEach(ip => {
-                console.log(`  👉 http://${ip}:5173`);
-            });
-            console.log('\n  🌍 Connect from ANYWHERE via Ngrok:');
-            console.log('  👉 https://outweigh-nag-uranium.ngrok-free.dev');
-            console.log('-------------------------------------------------------------\n');
+
+            const logServerInfo = () => {
+                const address = server.httpServer?.address();
+                const port = (address && typeof address === 'object') ? address.port : (server.config?.server?.port || 5173);
+                console.log('\n-------------------------------------------------------------');
+                console.log('  📱 SoftPix Wi-Fi Automated Disk & Media Server Active!');
+                console.log('  Connect on phone/tablet (same Wi-Fi):');
+                ips.forEach(ip => {
+                    console.log(`  👉 http://${ip}:${port}`);
+                });
+                console.log('-------------------------------------------------------------\n');
+            };
+
+            if (server.httpServer) {
+                server.httpServer.once('listening', logServerInfo);
+            } else {
+                logServerInfo();
+            }
 
             server.middlewares.use(async (req, res, next) => {
                 const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
 
                 // 1. IP info endpoint
                 if (url.pathname === '/api/ip') {
+                    const address = server.httpServer?.address();
+                    const port = (address && typeof address === 'object') ? address.port : (server.config?.server?.port || 5173);
                     res.setHeader('Content-Type', 'application/json');
-                    res.end(JSON.stringify({ ips: getLocalIpAddresses(), port: 5173 }));
+                    res.end(JSON.stringify({ ips: getLocalIpAddresses(), port }));
                     return;
                 }
 
