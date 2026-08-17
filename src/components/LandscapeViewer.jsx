@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
 import TagGroup from './TagGroup';
 import BookmarkOverlay from './BookmarkOverlay';
 
 const LandscapeViewer = ({
-    item, mediaUrl, isGlobalMute, resumeTime, setResumeTime, onNext,
+    item, mediaUrl, isGlobalMute, toggleGlobalMute, setIsGlobalMute, resumeTime, setResumeTime, onNext, onPrev,
     isLoopEnabled = true, toggleLoop,
+    shuffleMode, cycleShuffleMode, showToast,
     tags, secondaryTags = [], bookmarks = [], addBookmark, deleteBookmark,
     toggleTag, toggleSecondaryTag, availableTags,
     comments, addComment, deleteComment,
@@ -104,9 +106,30 @@ const LandscapeViewer = ({
             else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
         }
     };
+    const scaleRef = useRef(1);
+    const wheelTimeout = useRef(null);
+
+    const handleWheelCapture = (e) => {
+        const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+        if (isTouchDevice || item?.isVideo) return;
+
+        const isLeftHalf = e.clientX < window.innerWidth / 2;
+        if (isLeftHalf) {
+            e.stopPropagation();
+            e.preventDefault();
+            if (!wheelTimeout.current) {
+                if (e.deltaY > 0 && onNext) onNext();
+                if (e.deltaY < 0 && onPrev) onPrev();
+                wheelTimeout.current = setTimeout(() => {
+                    wheelTimeout.current = null;
+                }, 250);
+            }
+        }
+        // On right half: do not intercept, allow TransformWrapper to perform wheel zoom in/out
+    };
 
     return (
-        <div className="landscape-viewer" onMouseMove={handleMouseMove} style={{ width: '100%', height: '100%', display: 'flex', background: 'var(--bg-primary)', overflow: 'hidden', minHeight: 0, minWidth: 0 }}>
+        <div className="landscape-viewer" onMouseMove={handleMouseMove} onWheelCapture={handleWheelCapture} style={{ width: '100%', height: '100%', display: 'flex', background: 'var(--bg-primary)', overflow: 'hidden', minHeight: 0, minWidth: 0 }}>
             <div className={`viewer-media-container ${isInfoPanelOpen ? 'media-container-resized' : ''}`} onMouseMove={handleMouseMove} onDoubleClick={handleDoubleClick} style={{ flex: 1, position: 'relative', background: '#000', display: 'flex', justifyContent: 'center', alignItems: 'center', padding: 0, minHeight: 0, minWidth: 0 }}>
                 {/* FLOATING HAMBURGER MENU BUTTON OVER TOP-LEFT OF VIDEO */}
                 <button 
@@ -117,10 +140,11 @@ const LandscapeViewer = ({
                     }}
                     style={{
                         position: 'absolute',
-                        left: '12px',
+                        top: '20px',
+                        left: '20px',
                         zIndex: 50,
-                        opacity: (isButtonVisible && isSidebarCollapsed) ? 1 : 0,
-                        pointerEvents: (isButtonVisible && isSidebarCollapsed) ? 'auto' : 'none',
+                        opacity: isSidebarCollapsed ? 1 : 0,
+                        pointerEvents: isSidebarCollapsed ? 'auto' : 'none',
                         background: 'rgba(0, 0, 0, 0.65)',
                         backdropFilter: 'blur(8px)',
                         border: '1px solid rgba(255, 255, 255, 0.25)',
@@ -153,10 +177,11 @@ const LandscapeViewer = ({
                     }}
                     style={{
                         position: 'absolute',
-                        right: '12px',
+                        top: '20px',
+                        right: '20px',
                         zIndex: 50,
-                        opacity: (isButtonVisible && !isInfoPanelOpen) ? 1 : 0,
-                        pointerEvents: (isButtonVisible && !isInfoPanelOpen) ? 'auto' : 'none',
+                        opacity: !isInfoPanelOpen ? 1 : 0,
+                        pointerEvents: !isInfoPanelOpen ? 'auto' : 'none',
                         background: 'rgba(0, 0, 0, 0.65)',
                         backdropFilter: 'blur(8px)',
                         border: isInfoPanelOpen ? '1px solid #3b82f6' : '1px solid rgba(255, 255, 255, 0.25)',
@@ -184,7 +209,26 @@ const LandscapeViewer = ({
                 {item.isVideo ? (
                     <video ref={videoRef} src={mediaUrl} loop={isLoopEnabled} muted={isGlobalMute} onEnded={handleVideoEnded} style={{ width: '100%', height: '100%', objectFit: (typeof localStorage !== 'undefined' && localStorage.getItem('softpixVideoFitMode')) || 'contain', borderRadius: 0, boxShadow: 'none' }}></video>
                 ) : (
-                    <img src={mediaUrl} alt={item.name} style={{ width: '100%', height: '100%', objectFit: (typeof localStorage !== 'undefined' && localStorage.getItem('softpixVideoFitMode')) || 'contain', borderRadius: 0, boxShadow: 'none' }} />
+                    <TransformWrapper
+                        initialScale={1}
+                        minScale={1}
+                        maxScale={5}
+                        wheel={{ step: 0.1 }}
+                        doubleClick={{ disabled: true }}
+                        panning={{ velocityDisabled: true }}
+                        onTransformed={(ref) => {
+                            scaleRef.current = ref.state.scale;
+                            const isZoomed = ref.state.scale > 1.05;
+                            window.dispatchEvent(new CustomEvent('image-zoom-change', { detail: { isZoomed } }));
+                        }}
+                    >
+                        <TransformComponent 
+                            wrapperStyle={{ width: '100%', height: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center' }} 
+                            contentStyle={{ display: 'flex', justifyContent: 'center', alignItems: 'center', maxWidth: '100%', maxHeight: '100%', width: '100%', height: '100%' }}
+                        >
+                            <img src={mediaUrl} alt={item.name} style={{ maxWidth: '100%', maxHeight: '100%', width: 'auto', height: 'auto', objectFit: 'contain', display: 'block', margin: 'auto', borderRadius: 0, boxShadow: 'none' }} />
+                        </TransformComponent>
+                    </TransformWrapper>
                 )}
                 
                 <BookmarkOverlay 
@@ -200,6 +244,12 @@ const LandscapeViewer = ({
                     isPinned={isPinned}
                     isLoopEnabled={isLoopEnabled}
                     toggleLoop={toggleLoop}
+                    shuffleMode={shuffleMode}
+                    cycleShuffleMode={cycleShuffleMode}
+                    showToast={showToast}
+                    isGlobalMute={isGlobalMute}
+                    toggleGlobalMute={toggleGlobalMute}
+                    setIsGlobalMute={setIsGlobalMute}
                 />
             </div>
             

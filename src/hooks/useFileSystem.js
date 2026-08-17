@@ -90,7 +90,8 @@ export function useFileSystem() {
                                 lastModified: file.lastModified,
                                 isVideo: videoExtensions.some(ext => entry.name.toLowerCase().endsWith(ext)),
                                 type: 'local',
-                                folderTags: parentTags,
+                                folderTags: parentTags.length > 0 ? [parentTags[parentTags.length - 1]] : [],
+                                allFolderTags: parentTags,
                                 folderId: folderId
                             });
                         }

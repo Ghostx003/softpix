@@ -212,20 +212,21 @@
         /* --- App Specific Styles --- */
         #image-grid {
             margin: 0; display: grid;
-            gap: 0;
+            gap: 8px;
+            padding: 8px;
             /* Default responsive, will be overridden by JS if specific count selected */
-            grid-template-columns: repeat(auto-fill, minmax(450px, 1fr));
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
         }
         
-        /* Comfort View Mode */
+        /* Comfort View Mode (Spacious & Elegant Cards) */
         #image-grid.comfort-view {
-            gap: 16px !important;
-            padding: 16px !important;
+            gap: 24px !important;
+            padding: 24px !important;
         }
         #image-grid.comfort-view .pin-container,
         #image-grid.comfort-view video,
         #image-grid.comfort-view img {
-            border-radius: 16px !important;
+            border-radius: 18px !important;
         }
 
         .pin-container {
@@ -272,7 +273,7 @@
 
         /* --- Modal Styles --- */
         #image-modal, #name-modal {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
             background-color: rgba(0, 0, 0, 0.85); display: none; align-items: center;
             justify-content: center; z-index: 100;
         }
@@ -280,21 +281,23 @@
         .modal-content {
             background-color: var(--bg-secondary); border-radius: 1rem;
             box-shadow: 0 10px 25px rgba(0,0,0,0.2); width: 90%; height: 90%;
-            max-width: 1200px; display: flex; overflow: hidden;
+            max-width: 1200px; max-height: 90vh; display: flex; overflow: hidden;
+            margin: auto; align-items: stretch; justify-content: center;
         }
-        .modal-image-container {
+        .modal-image-container, .modal-main-content {
             flex: 3; background-color: var(--bg-primary); display: flex;
             align-items: center; justify-content: center; padding: 1rem; position: relative;
         }
         /* Modal media styles */
-        .modal-image-container img, .modal-image-container video { 
+        .modal-image-container img, .modal-image-container video,
+        .modal-main-content img, .modal-main-content video { 
             max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 0.5rem; 
         }
         .hidden-media { display: none !important; }
 
         .modal-details-container {
             flex: 1; min-width: 320px; padding: 1.5rem; display: flex;
-            flex-direction: column; border-left: 1px solid var(--border-primary);
+            flex-direction: column; justify-content: center; border-left: 1px solid var(--border-primary);
             overflow-y: auto;
         }
         .modal-details-container h3 { margin: 0 0 1rem 0; word-wrap: break-word; }
@@ -448,6 +451,20 @@
             .modal-details-container { border-left: none; border-top: 1px solid var(--border-primary); flex-grow: 1; min-height: 250px; }
             .nav-controls { gap: 0.5rem; }
             .navbar .logo { font-size: 1.25rem; }
+
+            #image-grid {
+                gap: 8px !important;
+                padding: 8px !important;
+            }
+            #image-grid.comfort-view {
+                gap: 12px !important;
+                padding: 12px !important;
+            }
+            #image-grid.comfort-view .pin-container,
+            #image-grid.comfort-view video,
+            #image-grid.comfort-view img {
+                border-radius: 12px !important;
+            }
         }
 
         /* Categories and Scroll Views Additions */
@@ -622,6 +639,7 @@
             box-shadow: none !important;
             width: 100% !important;
             height: 100% !important;
+            object-fit: contain !important;
         }
 
         /* Resizing Video Container when Right Sidebar (.panel-open) is Active in Fullscreen */
@@ -972,7 +990,7 @@ input[type=range].timeline::-moz-range-thumb:hover {
     }
 
     /* 3. Hide navigation arrows on mobile since swipe handles navigation */
-    #prev-btn, #next-btn, .floating-btn-left, .floating-btn-right {
+    #prev-btn, #next-btn, .floating-btn-right {
         display: none !important;
     }
 
@@ -1341,4 +1359,18 @@ input[type=range].timeline::-moz-range-thumb:hover {
     color: #ffffff;
 }
 
-
+/* Force react-zoom-pan-pinch to respect container size and prevent image stretching */
+.react-transform-wrapper {
+    width: 100% !important;
+    height: 100% !important;
+    display: flex !important;
+    justify-content: center !important;
+    align-items: center !important;
+}
+.react-transform-component {
+    max-width: 100% !important;
+    max-height: 100% !important;
+    display: flex !important;
+    justify-content: center !important;
+    align-items: center !important;
+}

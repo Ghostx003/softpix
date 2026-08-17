@@ -47,7 +47,7 @@ const TagBar = ({ activeFilterTags, setActiveFilterTags, uniqueTags, deleteTag, 
             lastTimeRef.current = timestamp;
 
             if (window.innerWidth <= 768) {
-                animFrameRef.current = requestAnimationFrame(step);
+                // Completely disable auto-scroll on mobile, rely on CSS overflow-x scrolling
                 return;
             }
 

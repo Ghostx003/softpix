@@ -36,26 +36,46 @@ function App() {
 
     const { localFiles, folders, addFolder, toggleFolder, removeFolder, isPrompting, pendingHandle, resumeSession } = useFileSystem();
 
+    const [isGlobalMute, setIsGlobalMute] = useLocalStorage('softpixIsGlobalMute', false);
+
     const { isRemoteClient, remoteCatalog } = useNetworkSync({
         localFiles,
         folders,
         pinnedImages,
         imageRatings,
         imageTags,
+        imageSecondaryTags,
         imageBookmarks,
         imagePopularity,
         externalUrls,
-        customCategories: []
+        customCategories: [],
+        isGlobalMute
     });
 
-    const effectiveLocalFiles = isRemoteClient && remoteCatalog?.files ? remoteCatalog.files : localFiles;
+    const effectiveLocalFiles = useMemo(() => {
+        let files = isRemoteClient ? (remoteCatalog?.files || []) : localFiles;
+        
+        // Ensure folderTags ONLY contains the direct parent folder (the last tag in hierarchy)
+        return files.map(f => {
+            let directParent = null;
+            if (f.allFolderTags && f.allFolderTags.length > 0) {
+                directParent = f.allFolderTags[f.allFolderTags.length - 1];
+            } else if (f.folderTags && f.folderTags.length > 0) {
+                directParent = f.folderTags[f.folderTags.length - 1];
+            }
+            return {
+                ...f,
+                folderTags: directParent ? [directParent] : (f.folderTags || [])
+            };
+        });
+    }, [isRemoteClient, remoteCatalog, localFiles]);
+
     const effectiveFolders = isRemoteClient && remoteCatalog?.folders ? remoteCatalog.folders : folders;
     const effectiveRatings = isRemoteClient && remoteCatalog?.imageRatings ? remoteCatalog.imageRatings : imageRatings;
     const effectiveBookmarks = isRemoteClient && remoteCatalog?.imageBookmarks ? remoteCatalog.imageBookmarks : imageBookmarks;
     const effectiveTags = isRemoteClient && remoteCatalog?.imageTags ? remoteCatalog.imageTags : imageTags;
+    const effectiveSecondaryTags = isRemoteClient && remoteCatalog?.imageSecondaryTags ? remoteCatalog.imageSecondaryTags : imageSecondaryTags;
 
-    // --- UI State ---
-    const [isGlobalMute, setIsGlobalMute] = useState(true);
     const [isLoopEnabled, setIsLoopEnabled] = useLocalStorage('isLoopEnabled', true);
     const toggleLoop = () => setIsLoopEnabled(prev => !prev);
     const [isComfortView, setIsComfortView] = useState(false);
@@ -85,6 +105,73 @@ function App() {
     };
     const [resumeTimes, setResumeTimes] = useState({});
     const [customCategories, setCustomCategories] = useState([]);
+
+    // Router and Navigation logic
+    useEffect(() => {
+        const handlePopState = () => {
+            const path = window.location.pathname;
+            if (path === '/') {
+                setIsHeaderVisible(true);
+            } else if (modalIndex !== -1) {
+                setModalIndex(-1);
+            }
+        };
+
+        window.addEventListener('popstate', handlePopState);
+        return () => window.removeEventListener('popstate', handlePopState);
+    }, [modalIndex]);
+
+    // --- Clean up invalid ancestor and subfolder tags from Image Tags ---
+    useEffect(() => {
+        if (effectiveLocalFiles.length === 0) return;
+
+        // 1. Map each folder to its set of child/descendant subfolders across all files
+        const subfoldersOf = {};
+        effectiveLocalFiles.forEach(file => {
+            if (file.allFolderTags && file.allFolderTags.length > 1) {
+                for (let i = 0; i < file.allFolderTags.length - 1; i++) {
+                    const parent = file.allFolderTags[i];
+                    if (!subfoldersOf[parent]) subfoldersOf[parent] = new Set();
+                    for (let j = i + 1; j < file.allFolderTags.length; j++) {
+                        subfoldersOf[parent].add(file.allFolderTags[j]);
+                    }
+                }
+            }
+        });
+
+        // 2. Helper to clean tags in state
+        const cleanTagsInState = (setterFn) => {
+            setterFn(prevTags => {
+                if (!prevTags) return prevTags;
+                let tagsChanged = false;
+                const newTags = { ...prevTags };
+
+                effectiveLocalFiles.forEach(file => {
+                    if (file.allFolderTags && file.allFolderTags.length > 0) {
+                        const directParent = file.allFolderTags[file.allFolderTags.length - 1];
+                        const ancestorTags = file.allFolderTags.slice(0, -1);
+                        const descendantTags = Array.from(subfoldersOf[directParent] || []);
+                        const invalidTags = [...ancestorTags, ...descendantTags];
+
+                        if (invalidTags.length > 0) {
+                            const currentFileTags = newTags[file.name] || [];
+                            const filtered = currentFileTags.filter(t => !invalidTags.includes(t));
+                            if (filtered.length !== currentFileTags.length) {
+                                newTags[file.name] = filtered;
+                                tagsChanged = true;
+                            }
+                        }
+                    }
+                });
+
+                return tagsChanged ? newTags : prevTags;
+            });
+        };
+
+        cleanTagsInState(setImageTags);
+        cleanTagsInState(setImageSecondaryTags);
+    }, [effectiveLocalFiles, setImageTags, setImageSecondaryTags]);
+
     const [scrollShuffleMenuOpen, setScrollShuffleMenuOpen] = useState(false);
     const [isPlayAll, setIsPlayAll] = useState(false);
     const [shuffledItems, setShuffledItems] = useState(null);
@@ -279,30 +366,6 @@ function App() {
         return () => window.removeEventListener('popstate', handlePopState);
     }, [modalIndex]);
 
-    // --- Merge Folder Tags into Image Tags ---
-    useEffect(() => {
-        if (effectiveLocalFiles.length === 0) return;
-        setImageTags(prevTags => {
-            let tagsChanged = false;
-            const newTags = { ...prevTags };
-            effectiveLocalFiles.forEach(file => {
-                if (file.folderTags && file.folderTags.length > 0) {
-                    const currentFileTags = newTags[file.name] || [];
-                    const mergedTags = new Set(currentFileTags);
-                    file.folderTags.forEach(t => {
-                        if (!removedTags[file.name]?.includes(t)) {
-                            mergedTags.add(t);
-                        }
-                    });
-                    if (mergedTags.size !== currentFileTags.length) {
-                        newTags[file.name] = Array.from(mergedTags);
-                        tagsChanged = true;
-                    }
-                }
-            });
-            return tagsChanged ? newTags : prevTags;
-        });
-    }, [effectiveLocalFiles, setImageTags, removedTags]);
 
     // --- Media Data ---
     const baseItems = useMemo(() => {
@@ -395,8 +458,14 @@ function App() {
     }, [baseItems, imageTags, imageSecondaryTags]);
 
     const allCategories = useMemo(() => {
-        return Array.from(new Set(['Uncategorized', ...uniqueTags, ...customCategories]));
-    }, [uniqueTags, customCategories]);
+        const categories = Array.from(new Set([...uniqueTags, ...customCategories]));
+        categories.sort((a, b) => {
+            const countA = tagCounts[a] || 0;
+            const countB = tagCounts[b] || 0;
+            return countB - countA;
+        });
+        return ['Uncategorized', ...categories];
+    }, [uniqueTags, customCategories, tagCounts]);
 
     // --- Actions ---
     const surpriseMe = () => {
@@ -511,25 +580,18 @@ function App() {
 
     // --- Smart Multi-Tag Shuffle Index & Category Resolution ---
     const allCategoriesWithCounts = useMemo(() => {
-        const counts = {};
-        displayedItems.forEach(item => {
-            const pTags = imageTags[item.name] || [];
-            const sTags = imageSecondaryTags[item.name] || [];
-            if (pTags.length === 0 && sTags.length === 0) {
-                counts['Uncategorized'] = (counts['Uncategorized'] || 0) + 1;
-            } else {
-                const itemCats = new Set([...pTags, ...sTags]);
-                itemCats.forEach(cat => {
-                    counts[cat] = (counts[cat] || 0) + 1;
-                });
-            }
-        });
-
-        return uniqueTags.map(tag => ({
-            category: tag,
-            count: counts[tag] || 0
-        })).sort((a, b) => b.count - a.count);
-    }, [uniqueTags, displayedItems, imageTags, imageSecondaryTags]);
+        return allCategories.map(cat => ({
+            category: cat,
+            count: cat === 'Uncategorized' ? 
+                displayedItems.filter(item => {
+                    const p = imageTags[item.name] || [];
+                    const s = imageSecondaryTags[item.name] || [];
+                    const f = item.folderTags || [];
+                    return p.length === 0 && s.length === 0 && f.length === 0;
+                }).length 
+                : tagCounts[cat] || 0
+        }));
+    }, [allCategories, tagCounts, displayedItems, imageTags, imageSecondaryTags]);
 
     const tagIndex = useMemo(() => {
         const map = new Map();
@@ -800,6 +862,7 @@ function App() {
                         displayedItems={baseItems}
                         uniqueTags={uniqueTags}
                         allCategories={allCategories}
+                        allCategoriesWithCounts={allCategoriesWithCounts}
                         customCategories={customCategories}
                         setCustomCategories={setCustomCategories}
                         imageTags={imageTags}
@@ -810,6 +873,8 @@ function App() {
                         addBookmarkForItem={addBookmarkForItem}
                         deleteBookmarkForItem={deleteBookmarkForItem}
                         isGlobalMute={isGlobalMute}
+                        toggleGlobalMute={() => setIsGlobalMute(!isGlobalMute)}
+                        setIsGlobalMute={setIsGlobalMute}
                         resumeTimes={resumeTimes}
                         setResumeTime={updateResumeTime}
                         imageComments={imageComments}
@@ -858,6 +923,8 @@ function App() {
                 isAutoShuffleOn={isAutoShuffleOn} setAutoShuffleOn={setAutoShuffleOn}
                 shuffleMode={shuffleMode} cycleShuffleMode={cycleShuffleMode}
                 isGlobalMute={isGlobalMute}
+                toggleGlobalMute={() => setIsGlobalMute(!isGlobalMute)}
+                setIsGlobalMute={setIsGlobalMute}
                 togglePin={togglePin}
                 isPinned={activeItem ? (pinnedImages.includes(activeItem.name) || pinnedImages.includes(activeItem.id)) : false}
             />

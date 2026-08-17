@@ -11,7 +11,7 @@ const ImageModal = ({
     comments, addComment, deleteComment, userName, userAvatar,
     rating, setRating, trackPopularity,
     isAutoShuffleOn, setAutoShuffleOn,
-    isGlobalMute = true,
+    isGlobalMute = true, toggleGlobalMute, setIsGlobalMute,
     togglePin, isPinned,
     isLoopEnabled, toggleLoop,
     shuffleMode, cycleShuffleMode
@@ -159,8 +159,38 @@ const ImageModal = ({
 
             e.preventDefault();
             const now = Date.now();
-
             const isLeftHalf = e.clientX < (window.innerWidth / 2);
+            const isPC = !('ontouchstart' in window) || navigator.maxTouchPoints === 0;
+
+            if (isPC && !item?.isVideo) {
+                if (isLeftHalf) {
+                    if (now - lastScrollTime.current < 250) return;
+                    if (Math.abs(e.deltaY) < 10) return;
+                    lastScrollTime.current = now;
+                    if (e.deltaY > 0) showNext();
+                    else showPrev();
+                    return;
+                } else {
+                    const zoomFactor = 0.15;
+                    setScale(prev => {
+                        let newScale = prev;
+                        if (e.deltaY < 0) {
+                            newScale = Math.min(prev + zoomFactor, 5);
+                        } else {
+                            newScale = Math.max(prev - zoomFactor, 1);
+                        }
+                        scaleRef.current = newScale;
+                        
+                        if (newScale <= 1) {
+                            setPosition({ x: 0, y: 0 });
+                            transformOrigin.current = 'center center';
+                        }
+                        return newScale;
+                    });
+                    return;
+                }
+            }
+
             if (isLeftHalf && item?.isVideo) {
                 if (now - lastScrollTime.current < 120) return;
                 lastScrollTime.current = now;
@@ -218,16 +248,44 @@ const ImageModal = ({
     const [position, setPosition] = useState({ x: 0, y: 0 });
     const [videoFitMode, setVideoFitMode] = useState('contain');
 
+    const isMouseDragging = useRef(false);
+    const lastMousePos = useRef(null);
+    const scaleRef = useRef(1);
+
     // Reset zoom and video fit mode when item changes
     useEffect(() => {
         setScale(1);
+        scaleRef.current = 1;
         setPosition({ x: 0, y: 0 });
         setVideoFitMode('contain');
         transformOrigin.current = 'center center';
         isGesturing.current = false;
+        isMouseDragging.current = false;
     }, [item?.name]);
 
     if (!isOpen || !item || !mediaUrl) return null;
+
+    const handleMouseDown = (e) => {
+        const isPC = !('ontouchstart' in window) || navigator.maxTouchPoints === 0;
+        if (isPC && !item?.isVideo && scale > 1) {
+            isMouseDragging.current = true;
+            lastMousePos.current = { x: e.clientX, y: e.clientY };
+        }
+    };
+
+    const handleMouseMove = (e) => {
+        if (isMouseDragging.current && lastMousePos.current) {
+            const dx = e.clientX - lastMousePos.current.x;
+            const dy = e.clientY - lastMousePos.current.y;
+            setPosition(prev => ({ x: prev.x + dx, y: prev.y + dy }));
+            lastMousePos.current = { x: e.clientX, y: e.clientY };
+        }
+    };
+
+    const handleMouseUp = () => {
+        isMouseDragging.current = false;
+        lastMousePos.current = null;
+    };
 
     const handleTouchStart = (e) => {
         if (e.touches.length === 2) {
@@ -342,14 +400,24 @@ const ImageModal = ({
     return (
         <div id="image-modal" style={{ display: 'flex' }} onClick={(e) => { if (e.target.id === 'image-modal') handleClose(); }}>
             <div className="modal-content" onClick={e => e.stopPropagation()}>
-                <div className="modal-image-container" style={{ position: 'relative', touchAction: 'none', overflow: 'hidden' }} onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd} onTouchCancel={handleTouchEnd}>
+                <div 
+                    className="modal-image-container modal-main-content"
+                    onTouchStart={handleTouchStart}
+                    onTouchMove={handleTouchMove}
+                    onTouchEnd={handleTouchEnd}
+                    onMouseDown={handleMouseDown}
+                    onMouseMove={handleMouseMove}
+                    onMouseUp={handleMouseUp}
+                    onMouseLeave={handleMouseUp}
+                    style={{ flex: 3, position: 'relative', display: 'flex', justifyContent: 'center', alignItems: 'center', background: '#000', overflow: 'hidden' }}
+                >
                     {promptMessage && (
-                        <div style={{ position: 'absolute', top: '40px', left: '50%', transform: 'translateX(-50%)', background: 'rgba(0,0,0,0.8)', color: 'white', padding: '10px 20px', borderRadius: '8px', fontSize: '1.1rem', fontWeight: 'bold', pointerEvents: 'none', zIndex: 100, transition: 'opacity 0.3s' }}>
+                        <div className="prompt-overlay fade-in" style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', background: 'rgba(0,0,0,0.8)', color: '#fff', padding: '15px 30px', borderRadius: '30px', fontSize: '1.2rem', fontWeight: 600, zIndex: 100, pointerEvents: 'none' }}>
                             {promptMessage}
                         </div>
                     )}
                     {item.isVideo ? (
-                        <video 
+                        <video
                             ref={videoRef} 
                             src={mediaUrl} 
                             autoPlay 
@@ -369,7 +437,7 @@ const ImageModal = ({
                             style={{ maxWidth: '100%', maxHeight: '100%', width: '100%', height: '100%', objectFit: videoFitMode, transition: 'object-fit 0.25s ease', pointerEvents: 'auto', WebkitTouchCallout: 'default', userSelect: 'auto' }}
                         ></video>
                     ) : (
-                        <img src={mediaUrl} alt={item.name} style={{ maxWidth: '100%', maxHeight: '100%', transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`, transition: initialDistance.current ? 'none' : 'transform 0.1s ease-out', transformOrigin: transformOrigin.current, pointerEvents: 'auto', WebkitTouchCallout: 'default', userSelect: 'auto' }} />
+                        <img draggable="false" src={mediaUrl} alt={item.name} style={{ maxWidth: '100%', maxHeight: '100%', transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`, transition: initialDistance.current ? 'none' : 'transform 0.1s ease-out', transformOrigin: transformOrigin.current, pointerEvents: 'auto', WebkitTouchCallout: 'default', userSelect: 'auto' }} />
                     )}
                     
                     <BookmarkOverlay 
@@ -386,8 +454,9 @@ const ImageModal = ({
                         isPinned={isPinned}
                         isLoopEnabled={isLoopEnabled}
                         toggleLoop={toggleLoop}
-                        shuffleMode={shuffleMode}
-                        cycleShuffleMode={cycleShuffleMode}
+                        isGlobalMute={isGlobalMute}
+                        toggleGlobalMute={toggleGlobalMute}
+                        setIsGlobalMute={setIsGlobalMute}
                     />
                 </div>
                 <div className="modal-details-container">

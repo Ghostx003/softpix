@@ -7,13 +7,20 @@ const VideoControlBar = ({
     isLoopEnabled, toggleLoop, shuffleMode, cycleShuffleMode, showToast, formatTime,
     hoveredBookmarkId, deletableBookmarkId, 
     handleBookmarkMouseEnter, handleBookmarkMouseLeave,
-    toggleFullscreen, toggleTheaterMode, isTheaterActive
+    toggleFullscreen, toggleTheaterMode, isTheaterActive,
+    isGlobalMute, toggleGlobalMute, setIsGlobalMute
 }) => {
     const [currentTime, setCurrentTime] = useState(0);
     const [duration, setDuration] = useState(0);
     const [isPlaying, setIsPlaying] = useState(false);
-    const [isMuted, setIsMuted] = useState(false);
+    const [isMuted, setIsMuted] = useState(typeof isGlobalMute === 'boolean' ? isGlobalMute : false);
     const isScrubbingRef = useRef(false);
+
+    useEffect(() => {
+        if (typeof isGlobalMute === 'boolean') {
+            setIsMuted(isGlobalMute);
+        }
+    }, [isGlobalMute]);
 
     useEffect(() => {
         const video = videoRef?.current;
@@ -35,7 +42,7 @@ const VideoControlBar = ({
         video.addEventListener('pause', handlePause);
 
         if (video.duration) setDuration(video.duration);
-        setIsMuted(video.muted);
+        setIsMuted(typeof isGlobalMute === 'boolean' ? isGlobalMute : video.muted);
 
         return () => {
             video.removeEventListener('timeupdate', updateTime);
@@ -44,7 +51,7 @@ const VideoControlBar = ({
             video.removeEventListener('play', handlePlay);
             video.removeEventListener('pause', handlePause);
         };
-    }, [videoRef, item]);
+    }, [videoRef, item, isGlobalMute]);
 
     const togglePlay = () => {
         if (!videoRef?.current) return;
@@ -56,9 +63,14 @@ const VideoControlBar = ({
     };
 
     const toggleMute = () => {
-        if (!videoRef?.current) return;
-        videoRef.current.muted = !videoRef.current.muted;
-        setIsMuted(videoRef.current.muted);
+        if (toggleGlobalMute) {
+            toggleGlobalMute();
+        } else if (setIsGlobalMute) {
+            setIsGlobalMute(prev => !prev);
+        } else if (videoRef?.current) {
+            videoRef.current.muted = !videoRef.current.muted;
+            setIsMuted(videoRef.current.muted);
+        }
     };
 
     const handleSeek = (e) => {
@@ -291,7 +303,10 @@ export const BookmarkOverlay = ({
     isLoopEnabled = true,
     toggleLoop,
     shuffleMode,
-    cycleShuffleMode
+    cycleShuffleMode,
+    isGlobalMute,
+    toggleGlobalMute,
+    setIsGlobalMute
 }) => {
     const [isPrompting, setIsPrompting] = useState(false);
     const [promptTime, setPromptTime] = useState(0);
@@ -341,7 +356,7 @@ export const BookmarkOverlay = ({
         if (mouseIdleTimerRef.current) clearTimeout(mouseIdleTimerRef.current);
         mouseIdleTimerRef.current = setTimeout(() => {
             setAreControlsVisible(false);
-        }, 4000);
+        }, 3000);
     };
 
     // Auto-apply saved video fit mode on mount or item change
@@ -397,6 +412,7 @@ export const BookmarkOverlay = ({
         };
 
         const onTouchMove = (e) => {
+            if (!item?.isVideo) return; // Only process pinch for videos
             if (e.touches.length >= 2 && initialTouchDistRef.current) {
                 try { e.preventDefault(); } catch (err) {}
                 const touch1 = e.touches[0];
@@ -408,7 +424,7 @@ export const BookmarkOverlay = ({
                 const ratio = currentDist / initialTouchDistRef.current;
                 const mediaEl = getMediaElement();
 
-                if (mediaEl) {
+                if (mediaEl && mediaEl.tagName === 'VIDEO') {
                     if (ratio > 1.08) {
                         mediaEl.style.transition = 'object-fit 0.25s ease';
                         mediaEl.style.objectFit = 'cover';
@@ -473,42 +489,38 @@ export const BookmarkOverlay = ({
             const deltaX = touchEndX - startX;
             const deltaY = touchEndY - startY;
 
-            const isHorizontalSwipe = Math.abs(deltaX) > 40 && Math.abs(deltaX) > Math.abs(deltaY);
+            const isSignificantSwipe = Math.abs(deltaX) > 40 || Math.abs(deltaY) > 40;
 
-            if (isHorizontalSwipe) {
-                if (item?.isVideo) {
-                    if (videoRef?.current) {
-                        if (deltaX > 0) {
-                            videoRef.current.currentTime = Math.min(videoRef.current.duration || Infinity, videoRef.current.currentTime + 7);
-                        } else {
-                            videoRef.current.currentTime = Math.max(0, videoRef.current.currentTime - 7);
+            if (isSignificantSwipe) {
+                return;
+            }
+
+            // Tap logic
+            const now = Date.now();
+            const timeSinceLastTap = now - lastTapRef.current;
+            
+            if (timeSinceLastTap < 450 && timeSinceLastTap > 0) {
+                if (singleTapTimeoutRef.current) clearTimeout(singleTapTimeoutRef.current);
+                handleFullscreenOrExit();
+                lastTapRef.current = 0;
+                e.stopPropagation();
+            } else {
+                lastTapRef.current = now;
+                const wereControlsVisible = areControlsVisible;
+                handleMouseMove();
+                
+                if (singleTapTimeoutRef.current) clearTimeout(singleTapTimeoutRef.current);
+                singleTapTimeoutRef.current = setTimeout(() => {
+                    if (wereControlsVisible) {
+                        if (videoRef?.current) {
+                            if (videoRef.current.paused) {
+                                videoRef.current.play().catch(() => {});
+                            } else {
+                                videoRef.current.pause();
+                            }
                         }
                     }
-                    handleMouseMove();
-                    e.stopPropagation();
-                    return;
-                }
-            } else {
-                // Tap logic
-                const now = Date.now();
-                const timeSinceLastTap = now - lastTapRef.current;
-                
-                if (timeSinceLastTap < 450 && timeSinceLastTap > 0) {
-                    if (singleTapTimeoutRef.current) clearTimeout(singleTapTimeoutRef.current);
-                    handleFullscreenOrExit();
-                    lastTapRef.current = 0;
-                    e.stopPropagation();
-                } else {
-                    lastTapRef.current = now;
-                    handleMouseMove();
-                    
-                    if (singleTapTimeoutRef.current) clearTimeout(singleTapTimeoutRef.current);
-                    singleTapTimeoutRef.current = setTimeout(() => {
-                        if (videoRef?.current && videoRef.current.paused) {
-                            videoRef.current.play().catch(() => {});
-                        }
-                    }, 350);
-                }
+                }, 350);
             }
         }
     };
@@ -1003,6 +1015,9 @@ export const BookmarkOverlay = ({
                     handleBookmarkMouseEnter={handleBookmarkMouseEnter}
                     handleBookmarkMouseLeave={handleBookmarkMouseLeave}
                     toggleFullscreen={toggleFullscreen}
+                    isGlobalMute={isGlobalMute}
+                    toggleGlobalMute={toggleGlobalMute}
+                    setIsGlobalMute={setIsGlobalMute}
                 />
             )}
 
@@ -1016,15 +1031,33 @@ export const BookmarkOverlay = ({
                         bottom: '24px',
                         right: '24px',
                         zIndex: 20,
-                        opacity: isUIActive ? 1 : 0,
-                        transform: `translateY(${isUIActive ? '0' : '8px'})`,
-                        transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                        pointerEvents: isUIActive ? 'auto' : 'none',
+                        opacity: 1,
+                        transform: 'none',
+                        pointerEvents: 'auto',
                         display: 'flex',
                         alignItems: 'center',
                         gap: '10px'
                     }}
                 >
+                    <button 
+                        className="v-control-btn"
+                        onClick={cycleShuffleMode}
+                        title={`Shuffle Mode: ${shuffleMode || 'off'}`}
+                        style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    >
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 3 21 3 21 8"></polyline><line x1="4" y1="20" x2="21" y2="3"></line><polyline points="21 16 21 21 16 21"></polyline><line x1="15" y1="15" x2="21" y2="21"></line><line x1="4" y1="4" x2="9" y2="9"></line></svg>
+                        {shuffleMode && shuffleMode !== 'off' && (
+                            <span style={{
+                                position: 'absolute', top: '-4px', right: '-4px',
+                                background: shuffleMode === 'category' ? '#3b82f6' : '#10b981',
+                                color: '#fff', fontSize: '10px', fontWeight: 'bold',
+                                borderRadius: '4px', padding: '0 4px', lineHeight: '14px',
+                                textTransform: 'uppercase'
+                            }}>
+                                {shuffleMode === 'category' ? 'CAT' : 'ALL'}
+                            </span>
+                        )}
+                    </button>
                     <button 
                         onClick={toggleFullscreen} 
                         title="Standard Fullscreen Mode (T)" 

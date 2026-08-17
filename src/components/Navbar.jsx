@@ -102,6 +102,7 @@ const Navbar = ({
                 <select className="sort-select" title="Items per row & layout mode" value={currentColumnSelectValue} onChange={handleColumnSelectChange}>
                     <optgroup label="Standard Grid">
                         <option value="auto">Auto</option>
+                        <option value="2">2 Columns</option>
                         <option value="3">3 Columns</option>
                         <option value="4">4 Columns</option>
                         <option value="5">5 Columns</option>
@@ -110,6 +111,7 @@ const Navbar = ({
                     </optgroup>
                     <optgroup label="Comfort View (Rounded & Spaced)">
                         <option value="comfort-auto">Comfort: Auto</option>
+                        <option value="comfort-2">Comfort: 2 Columns</option>
                         <option value="comfort-3">Comfort: 3 Columns</option>
                         <option value="comfort-4">Comfort: 4 Columns</option>
                         <option value="comfort-5">Comfort: 5 Columns</option>

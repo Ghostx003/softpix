@@ -228,7 +228,7 @@ export function wifiSyncPlugin() {
                     if (hostCatalog && Array.isArray(hostCatalog.files)) {
                         const matchedItem = hostCatalog.files.find(f => f.id === fileId);
                         if (matchedItem) {
-                            const folderTagList = matchedItem.folderTags || [];
+                            const folderTagList = matchedItem.allFolderTags || matchedItem.folderTags || [];
                             if (folderTagList.length > 0) {
                                 const folderName = folderTagList[0];
                                 const rootDiskPath = findFolderOnDisk(folderName);

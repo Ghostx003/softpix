@@ -12,7 +12,7 @@ const shuffleArray = (array) => {
 };
 
 const ScrollFeedView = ({ 
-    displayedItems, uniqueTags, allCategories, customCategories, setCustomCategories, imageTags, setImageTags, imageSecondaryTags = {}, setImageSecondaryTags, imageBookmarks = {}, addBookmarkForItem, deleteBookmarkForItem, isGlobalMute, resumeTimes, setResumeTime,
+    displayedItems, uniqueTags, allCategories, allCategoriesWithCounts, customCategories, setCustomCategories, imageTags, setImageTags, imageSecondaryTags = {}, setImageSecondaryTags, imageBookmarks = {}, addBookmarkForItem, deleteBookmarkForItem, isGlobalMute, toggleGlobalMute, setIsGlobalMute, resumeTimes, setResumeTime,
     imageComments, addCommentForItem, deleteCommentForItem, userName, userAvatar,
     imageRatings, setRatingForItem, trackPopularity, toggleTagForItem, toggleSecondaryTagForItem,
     shuffleMenuOpen, setShuffleMenuOpen, togglePin, deleteImage, pinnedImages = [],
@@ -39,15 +39,28 @@ const ScrollFeedView = ({
     const touchStartY = useRef(null);
     const touchStartX = useRef(null);
     const touchThrottled = useRef(false);
+    const hasMultipleTouches = useRef(false);
 
     const handleTouchStart = (e) => {
-        if (e.touches && e.touches.length === 1) {
+        if (e.touches && e.touches.length > 1) {
+            hasMultipleTouches.current = true;
+        } else if (e.touches && e.touches.length === 1) {
+            hasMultipleTouches.current = false;
             touchStartY.current = e.touches[0].clientY;
             touchStartX.current = e.touches[0].clientX;
         }
     };
 
     const handleTouchEnd = (e) => {
+        if (hasMultipleTouches.current) {
+            if (e.touches.length === 0) {
+                hasMultipleTouches.current = false;
+                touchStartY.current = null;
+                touchStartX.current = null;
+            }
+            return;
+        }
+
         if (touchStartY.current === null || touchStartX.current === null) return;
         if (!e.changedTouches || e.changedTouches.length === 0) return;
 
@@ -107,8 +120,9 @@ const ScrollFeedView = ({
             pool = displayedItems.filter(item => {
                 const pTags = imageTags[item.name] || [];
                 const sTags = imageSecondaryTags[item.name] || [];
-                if (selectedCategory === 'Uncategorized') return pTags.length === 0 && sTags.length === 0;
-                return pTags.includes(selectedCategory) || sTags.includes(selectedCategory);
+                const fTags = item.folderTags || [];
+                if (selectedCategory === 'Uncategorized') return pTags.length === 0 && sTags.length === 0 && fTags.length === 0;
+                return pTags.includes(selectedCategory) || sTags.includes(selectedCategory) || fTags.includes(selectedCategory);
             });
             showToast(`🎲 Shuffle Mode Enabled\nPlaying videos from: ${selectedCategory}`);
         } else {
@@ -116,7 +130,8 @@ const ScrollFeedView = ({
                 pool = displayedItems.filter(item => {
                     const pTags = imageTags[item.name] || [];
                     const sTags = imageSecondaryTags[item.name] || [];
-                    return selectedShuffleCategories.some(cat => pTags.includes(cat) || sTags.includes(cat));
+                    const fTags = item.folderTags || [];
+                    return selectedShuffleCategories.some(cat => pTags.includes(cat) || sTags.includes(cat) || fTags.includes(cat));
                 });
                 showToast(`🎲 Shuffle Mode Enabled\nPlaying videos from: ${selectedShuffleCategories.join(', ')}`);
             } else {
@@ -151,23 +166,27 @@ const ScrollFeedView = ({
         if (isShuffleModeActive) {
             return shuffledPlaylist;
         }
+        let result = [];
         if (mode === 'random') {
-            return randomFeedPlaylist.length > 0 ? randomFeedPlaylist : displayedItems;
+            result = randomFeedPlaylist.length > 0 ? randomFeedPlaylist : displayedItems;
         } else if (mode === 'category') {
             if (selectedCategory === 'Uncategorized') {
-                return displayedItems.filter(item => {
+                result = displayedItems.filter(item => {
                     const pTags = imageTags[item.name] || [];
                     const sTags = imageSecondaryTags[item.name] || [];
-                    return pTags.length === 0 && sTags.length === 0;
+                    const fTags = item.folderTags || [];
+                    return pTags.length === 0 && sTags.length === 0 && fTags.length === 0;
+                });
+            } else {
+                result = displayedItems.filter(item => {
+                    const pTags = imageTags[item.name] || [];
+                    const sTags = imageSecondaryTags[item.name] || [];
+                    const fTags = item.folderTags || [];
+                    return pTags.includes(selectedCategory) || sTags.includes(selectedCategory) || fTags.includes(selectedCategory);
                 });
             }
-            return displayedItems.filter(item => {
-                const pTags = imageTags[item.name] || [];
-                const sTags = imageSecondaryTags[item.name] || [];
-                return pTags.includes(selectedCategory) || sTags.includes(selectedCategory);
-            });
         }
-        return [];
+        return [...result].sort((a, b) => a.name.localeCompare(b.name));
     }, [mode, selectedCategory, displayedItems, imageTags, imageSecondaryTags, isShuffleModeActive, shuffledPlaylist, randomFeedPlaylist]);
 
     const activeItem = feedItems[activeIndex] || null;
@@ -237,48 +256,11 @@ const ScrollFeedView = ({
     };
 
     const getCategoryCount = (category) => {
-        if (category === 'Uncategorized') {
-            return displayedItems.filter(item => {
-                const pTags = imageTags[item.name] || [];
-                const sTags = imageSecondaryTags[item.name] || [];
-                return pTags.length === 0 && sTags.length === 0;
-            }).length;
-        }
-        return displayedItems.filter(item => {
-            const pTags = imageTags[item.name] || [];
-            const sTags = imageSecondaryTags[item.name] || [];
-            return pTags.includes(category) || sTags.includes(category);
-        }).length;
+        const cat = allCategoriesWithCounts.find(c => c.category === category);
+        return cat ? cat.count : 0;
     };
 
-    const sortedCategories = useMemo(() => {
-        const counts = {};
-        displayedItems.forEach(item => {
-            const pTags = imageTags[item.name] || [];
-            const sTags = imageSecondaryTags[item.name] || [];
-            if (pTags.length === 0 && sTags.length === 0) {
-                counts['Uncategorized'] = (counts['Uncategorized'] || 0) + 1;
-            } else {
-                const itemCats = new Set([...pTags, ...sTags]);
-                itemCats.forEach(cat => {
-                    counts[cat] = (counts[cat] || 0) + 1;
-                });
-            }
-        });
-        
-        return [...allCategories].sort((a, b) => {
-            if (a === 'Uncategorized') return -1;
-            if (b === 'Uncategorized') return 1;
-            
-            const countA = counts[a] || 0;
-            const countB = counts[b] || 0;
-            
-            if (countA === 0 && countB !== 0) return 1;
-            if (countB === 0 && countA !== 0) return -1;
-            
-            return a.localeCompare(b);
-        });
-    }, [allCategories, displayedItems, imageTags, imageSecondaryTags]);
+    const sortedCategories = allCategories;
 
     // Ignore Empty Folders: Automatically initialize to first non-empty category
     useEffect(() => {
@@ -371,8 +353,27 @@ const ScrollFeedView = ({
             const mediaContainer = e.target.closest('.viewer-media-container') || e.target.closest('.landscape-viewer') || e.target.closest('.portrait-viewer') || document.querySelector('.viewer-media-container');
             if (e.clientX > (window.innerWidth * 0.85)) return;
 
-            const videoEl = mediaContainer ? (mediaContainer.querySelector('video') || document.querySelector('video')) : document.querySelector('video');
+            const isPC = !('ontouchstart' in window) || navigator.maxTouchPoints === 0;
+            const isPhoto = activeItem && !activeItem.isVideo;
             let isLeftHalf = e.clientX < (window.innerWidth * 0.5);
+
+            if (isPC && isPhoto) {
+                // FOR PHOTOS ON PC:
+                // Left half of screen: scrolling mousewheel changes photo (next / prev)
+                // Right half of screen: DO NOT intercept here; let TransformWrapper handle wheel zoom in/out!
+                if (!isLeftHalf) return;
+
+                if (isThrottled) return;
+                if (Math.abs(e.deltaY) < 10) return;
+
+                advanceFeed(e.deltaY > 0 ? 1 : -1);
+                isThrottled = true;
+                setTimeout(() => { isThrottled = false; }, 350);
+                return;
+            }
+
+            // FOR VIDEOS ON PC:
+            const videoEl = mediaContainer ? (mediaContainer.querySelector('video') || document.querySelector('video')) : document.querySelector('video');
 
             if (isLeftHalf && videoEl) {
                 e.preventDefault();
@@ -734,9 +735,12 @@ const ScrollFeedView = ({
                     <TransitionManager 
                         activeItem={activeItem}
                         isGlobalMute={isGlobalMute}
+                        toggleGlobalMute={toggleGlobalMute}
+                        setIsGlobalMute={setIsGlobalMute}
                         resumeTimes={resumeTimes}
                         setResumeTime={setResumeTime}
                         onNext={() => advanceFeed(1)}
+                        onPrev={() => advanceFeed(-1)}
                         isLoopEnabled={isLoopEnabled}
                         toggleLoop={toggleLoop}
                         tags={imageTags}
@@ -761,6 +765,8 @@ const ScrollFeedView = ({
                         isInfoPanelOpen={isInfoPanelOpen}
                         setIsInfoPanelOpen={setIsInfoPanelOpen}
                         isSidebarCollapsed={isSidebarCollapsed}
+                        shuffleMode={currentShuffleMode || 'off'}
+                        cycleShuffleMode={() => setShuffleMenuOpen(true)}
                     />
                 )}
             </div>

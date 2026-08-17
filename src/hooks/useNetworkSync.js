@@ -6,10 +6,12 @@ export function useNetworkSync({
     pinnedImages, 
     imageRatings, 
     imageTags, 
+    imageSecondaryTags,
     imageBookmarks, 
     imagePopularity, 
     externalUrls, 
-    customCategories 
+    customCategories,
+    isGlobalMute
 }) {
     const [isRemoteClient, setIsRemoteClient] = useState(false);
     const [remoteCatalog, setRemoteCatalog] = useState(null);
@@ -36,6 +38,7 @@ export function useNetworkSync({
                 name: f.name,
                 isVideo: f.isVideo,
                 folderTags: f.folderTags,
+                allFolderTags: f.allFolderTags,
                 folderId: f.folderId,
                 lastModified: f.lastModified,
                 type: 'remote',
@@ -48,10 +51,12 @@ export function useNetworkSync({
                 pinnedImages: pinnedImages || [],
                 imageRatings: imageRatings || {},
                 imageTags: imageTags || {},
+                imageSecondaryTags: imageSecondaryTags || {},
                 imageBookmarks: imageBookmarks || {},
                 imagePopularity: imagePopularity || {},
                 externalUrls: externalUrls || [],
                 customCategories: customCategories || [],
+                isGlobalMute: isGlobalMute,
                 updatedAt: Date.now()
             };
 
@@ -61,7 +66,7 @@ export function useNetworkSync({
                 body: JSON.stringify(catalog)
             }).catch(() => {});
         }
-    }, [localFiles, folders, pinnedImages, imageRatings, imageTags, imageBookmarks, imagePopularity, externalUrls, customCategories]);
+    }, [localFiles, folders, pinnedImages, imageRatings, imageTags, imageSecondaryTags, imageBookmarks, imagePopularity, externalUrls, customCategories, isGlobalMute]);
 
     // 2. Host side: Build fast lookup map for local files
     useEffect(() => {
@@ -128,11 +133,8 @@ export function useNetworkSync({
                         setRemoteCatalog(prev => {
                             if (!prev) return catalog;
                             if (prev.updatedAt && prev.updatedAt === catalog.updatedAt) return prev;
-                            const prevIds = prev.files ? prev.files.map(f => f.id).join(',') : '';
-                            const newIds = catalog.files ? catalog.files.map(f => f.id).join(',') : '';
-                            if (prevIds === newIds && JSON.stringify(prev.imageRatings) === JSON.stringify(catalog.imageRatings)) {
-                                return prev;
-                            }
+                            
+                            // Accept the new catalog since updatedAt is different (host state changed)
                             return catalog;
                         });
                         setIsRemoteClient(true);

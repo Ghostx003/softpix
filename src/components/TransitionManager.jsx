@@ -6,9 +6,12 @@ import { loadMediaUrl, detectOrientation } from '../utils/OrientationDetector';
 const TransitionManager = ({
     activeItem,
     isGlobalMute,
+    toggleGlobalMute,
+    setIsGlobalMute,
     resumeTimes,
     setResumeTime,
     onNext,
+    onPrev,
     isLoopEnabled,
     toggleLoop,
     tags,
@@ -32,7 +35,10 @@ const TransitionManager = ({
     pinnedImages = [],
     isInfoPanelOpen = false,
     setIsInfoPanelOpen,
-    isSidebarCollapsed
+    isSidebarCollapsed,
+    shuffleMode,
+    cycleShuffleMode,
+    showToast
 }) => {
     const [currentItem, setCurrentItem] = useState(null);
     const [currentMediaUrl, setCurrentMediaUrl] = useState(null);
@@ -60,20 +66,21 @@ const TransitionManager = ({
             const nextUrl = await loadMediaUrl(activeItem);
             if (activeItemRef.current !== activeItem) return;
             
-            // 2. Determine Orientation BEFORE rendering
-            const orientation = await detectOrientation(nextUrl, activeItem.isVideo);
-            if (activeItemRef.current !== activeItem) return;
-
-            // 3. Cleanup old blob URL if local
+            // 2. Cleanup old blob URL if local
             if (currentMediaUrl && currentItem?.type === 'local') {
                 URL.revokeObjectURL(currentMediaUrl);
             }
 
-            // 4. Update viewer state atomically
+            // 3. Update viewer state instantly to start rendering
             setCurrentMediaUrl(nextUrl);
-            setCurrentOrientation(orientation);
             setCurrentItem(activeItem);
-            setOpacity(1);
+            
+            // 4. Determine Orientation asynchronously without blocking render
+            detectOrientation(nextUrl, activeItem.isVideo).then(orientation => {
+                if (activeItemRef.current === activeItem) {
+                    setCurrentOrientation(orientation);
+                }
+            });
         };
         
         performTransition();
@@ -96,15 +103,18 @@ const TransitionManager = ({
     const ViewerComponent = currentOrientation === 'portrait' ? PortraitViewer : LandscapeViewer;
 
     return (
-        <div style={{ flex: 1, opacity: opacity, transition: 'opacity 0.3s ease-in-out', background: '#000', display: 'flex', minHeight: 0, minWidth: 0 }}>
+        <div style={{ flex: 1, opacity: opacity, background: '#000', display: 'flex', minHeight: 0, minWidth: 0 }}>
             <ViewerComponent 
                 key={currentItem.name}
                 item={currentItem}
                 mediaUrl={currentMediaUrl}
                 isGlobalMute={isGlobalMute}
+                toggleGlobalMute={toggleGlobalMute}
+                setIsGlobalMute={setIsGlobalMute}
                 resumeTime={resumeTimes[currentItem.name] || 0}
                 setResumeTime={setResumeTime}
                 onNext={onNext}
+                onPrev={onPrev}
                 isLoopEnabled={isLoopEnabled}
                 toggleLoop={toggleLoop}
                 tags={tags[currentItem.name] || []}
@@ -129,6 +139,9 @@ const TransitionManager = ({
                 isInfoPanelOpen={isInfoPanelOpen}
                 setIsInfoPanelOpen={setIsInfoPanelOpen}
                 isSidebarCollapsed={isSidebarCollapsed}
+                shuffleMode={shuffleMode}
+                cycleShuffleMode={cycleShuffleMode}
+                showToast={showToast}
             />
         </div>
     );

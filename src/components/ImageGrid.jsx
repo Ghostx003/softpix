@@ -303,8 +303,16 @@ const ImageGrid = ({ displayedItems, openModal, togglePin, deleteImage, pinnedIm
         );
     }
 
+    const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768;
+    const autoColumns = isMobile 
+        ? 'repeat(2, 1fr)' 
+        : isComfortView 
+            ? 'repeat(auto-fill, minmax(340px, 1fr))' 
+            : 'repeat(auto-fill, minmax(280px, 1fr))';
+    const gridColumns = columnCount === 'auto' ? autoColumns : `repeat(${columnCount}, 1fr)`;
+
     return (
-        <div id="image-grid" className={isComfortView ? 'comfort-view' : ''} style={{ display: 'grid', gridTemplateColumns: columnCount === 'auto' ? 'repeat(auto-fill, minmax(450px, 1fr))' : `repeat(${columnCount}, 1fr)` }}>
+        <div id="image-grid" className={isComfortView ? 'comfort-view' : ''} style={{ display: 'grid', gridTemplateColumns: gridColumns }}>
             {displayedItems.map((item, index) => (
                 <GridItem 
                     key={`${item.id || item.name || 'item'}_${index}`} 
