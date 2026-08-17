@@ -1040,18 +1040,39 @@ export const BookmarkOverlay = ({
                     }}
                 >
                     <button 
-                        className="v-control-btn"
-                        onClick={cycleShuffleMode}
-                        title={`Shuffle Mode: ${shuffleMode || 'off'}`}
+                        className={`v-control-btn ${shuffleMode && shuffleMode !== 'off' ? 'active-toggle' : ''}`}
+                        onClick={() => {
+                            if (cycleShuffleMode) {
+                                const current = shuffleMode || 'off';
+                                const nextMode = current === 'off' ? 'category' : (current === 'category' ? 'global' : 'off');
+                                cycleShuffleMode();
+                                showToast(
+                                    nextMode === 'category' ? '🔀 Category Shuffle Enabled' :
+                                    nextMode === 'global' ? '🎲 Global Shuffle Enabled' :
+                                    '➡️ Shuffle Disabled'
+                                );
+                            }
+                        }}
+                        title={
+                            shuffleMode === 'category' ? "Category Shuffle Enabled (S)" : 
+                            shuffleMode === 'global' ? "Global Shuffle Enabled (S)" : 
+                            "Shuffle Off (S)"
+                        }
                         style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                     >
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 3 21 3 21 8"></polyline><line x1="4" y1="20" x2="21" y2="3"></line><polyline points="21 16 21 21 16 21"></polyline><line x1="15" y1="15" x2="21" y2="21"></line><line x1="4" y1="4" x2="9" y2="9"></line></svg>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={shuffleMode === 'global' ? '#10b981' : (shuffleMode === 'category' ? '#38bdf8' : 'currentColor')} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="16 3 21 3 21 8"></polyline>
+                            <line x1="4" y1="20" x2="21" y2="3"></line>
+                            <polyline points="21 16 21 21 16 21"></polyline>
+                            <line x1="15" y1="15" x2="21" y2="21"></line>
+                            <line x1="4" y1="4" x2="9" y2="9"></line>
+                        </svg>
                         {shuffleMode && shuffleMode !== 'off' && (
                             <span style={{
                                 position: 'absolute', top: '-4px', right: '-4px',
-                                background: shuffleMode === 'category' ? '#3b82f6' : '#10b981',
-                                color: '#fff', fontSize: '10px', fontWeight: 'bold',
-                                borderRadius: '4px', padding: '0 4px', lineHeight: '14px',
+                                background: shuffleMode === 'category' ? '#38bdf8' : '#10b981',
+                                color: '#000000', fontSize: '0.58rem', fontWeight: 800,
+                                borderRadius: '4px', padding: '1px 4px', lineHeight: 1,
                                 textTransform: 'uppercase'
                             }}>
                                 {shuffleMode === 'category' ? 'CAT' : 'ALL'}

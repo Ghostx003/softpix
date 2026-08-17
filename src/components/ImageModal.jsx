@@ -140,7 +140,7 @@ const ImageModal = ({
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [isOpen, showNext, showPrev, closeModal, rating, setRating]);
+    }, [isOpen, showNext, showPrev, closeModal, rating, setRating, shuffleMode, cycleShuffleMode]);
 
     useEffect(() => {
         if (!isOpen) return;
@@ -441,7 +441,6 @@ const ImageModal = ({
                     )}
                     
                     <BookmarkOverlay 
-
                         item={item} 
                         videoRef={videoRef} 
                         bookmarks={bookmarks} 
@@ -454,6 +453,9 @@ const ImageModal = ({
                         isPinned={isPinned}
                         isLoopEnabled={isLoopEnabled}
                         toggleLoop={toggleLoop}
+                        shuffleMode={shuffleMode}
+                        cycleShuffleMode={cycleShuffleMode}
+                        showToast={showPrompt}
                         isGlobalMute={isGlobalMute}
                         toggleGlobalMute={toggleGlobalMute}
                         setIsGlobalMute={setIsGlobalMute}
