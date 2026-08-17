@@ -263,6 +263,25 @@ const GridItem = memo(({ item, index, openModal, togglePin, deleteImage, isPinne
 
 const ImageGrid = ({ displayedItems, openModal, togglePin, deleteImage, pinnedImages, isGlobalMute, columnCount, isPrompting, resumeSession, resumeFolderName, isPlayAll, imageRatings, setRatingForItem, isComfortView }) => {
     const [contextMenuState, setContextMenuState] = useState(null);
+    const [toastMessage, setToastMessage] = useState(null);
+    const toastTimeoutRef = useRef(null);
+
+    const showToast = useCallback((msg) => {
+        if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+        setToastMessage(msg);
+        toastTimeoutRef.current = setTimeout(() => {
+            setToastMessage(null);
+        }, 2200);
+    }, []);
+
+    // Listen for softpix-toast custom events
+    useEffect(() => {
+        const handleToastEvent = (e) => {
+            if (e.detail) showToast(e.detail);
+        };
+        window.addEventListener('softpix-toast', handleToastEvent);
+        return () => window.removeEventListener('softpix-toast', handleToastEvent);
+    }, [showToast]);
 
     const handleGridItemRightClick = useCallback((e, item, isPinned, mediaUrl, itemRating) => {
         setContextMenuState(prev => {
@@ -339,13 +358,35 @@ const ImageGrid = ({ displayedItems, openModal, togglePin, deleteImage, pinnedIm
                     y={contextMenuState.y}
                     item={contextMenuState.item}
                     onClose={() => setContextMenuState(null)}
-                    onCopy={(itemToCopy) => copyImageToClipboard(itemToCopy)}
+                    onCopy={(itemToCopy) => copyImageToClipboard(itemToCopy, showToast)}
                     onPin={togglePin}
                     onDelete={() => deleteImage(contextMenuState.item)}
                     onRate={setRatingForItem}
                     isPinned={contextMenuState.isPinned}
                     rating={contextMenuState.itemRating}
                 />
+            )}
+
+            {toastMessage && (
+                <div style={{
+                    position: 'fixed',
+                    top: '25px',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    zIndex: 10000,
+                    background: 'rgba(15, 23, 42, 0.95)',
+                    color: '#ffffff',
+                    padding: '9px 20px',
+                    borderRadius: '20px',
+                    border: '1px solid rgba(255, 255, 255, 0.15)',
+                    boxShadow: '0 10px 30px rgba(0, 0, 0, 0.6)',
+                    fontSize: '0.9rem',
+                    fontWeight: 600,
+                    pointerEvents: 'none',
+                    animation: 'fadeIn 0.2s ease-out'
+                }}>
+                    {toastMessage}
+                </div>
             )}
         </div>
     );
