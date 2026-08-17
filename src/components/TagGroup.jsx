@@ -36,7 +36,7 @@ const TagGroup = ({ title, availableTags, selectedTags = [], activeColor = '#3b8
                 <span style={{ 
                     fontSize: '0.75rem', 
                     fontWeight: 600,
-                    color: isSelectedCount => selectedTags.length > 0 ? accentDotColor : 'var(--text-secondary)',
+                    color: selectedTags.length > 0 ? accentDotColor : 'var(--text-secondary)',
                     background: 'var(--bg-tertiary)',
                     padding: '2px 7px',
                     borderRadius: '10px'
@@ -66,7 +66,11 @@ const TagGroup = ({ title, availableTags, selectedTags = [], activeColor = '#3b8
                                     fontWeight: isSelected ? 600 : 500,
                                     cursor: 'pointer',
                                     transition: 'all 0.18s ease-in-out',
-                                    transform: isSelected ? 'scale(1.02)' : 'scale(1)'
+                                    transform: isSelected ? 'scale(1.02)' : 'scale(1)',
+                                    wordBreak: 'break-word',
+                                    maxWidth: '100%',
+                                    textAlign: 'left',
+                                    lineHeight: '1.25'
                                 }}
                                 onClick={() => onToggleTag(tag)}
                                 onMouseEnter={e => {

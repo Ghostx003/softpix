@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, memo, useCallback } from 'react';
 import ContextMenu from './ContextMenu';
 import { copyImageToClipboard } from '../utils/copyImage';
+import { checkServerSyncAvailable } from '../hooks/useNetworkSync';
 
 // Shared Intersection Observers and Blob URL Cache for massive performance gains
 const visibilityCallbacks = new WeakMap();
@@ -133,14 +134,16 @@ const GridItem = memo(({ item, index, openModal, togglePin, deleteImage, isPinne
                             const createdUrl = URL.createObjectURL(file);
                             blobUrlCache.set(itemId, createdUrl);
                             setMediaUrl(createdUrl);
-                            // Proactively upload buffer to local server for phone Wi-Fi streaming
-                            file.arrayBuffer().then(buf => {
-                                fetch(`/api/sync/upload-file?id=${encodeURIComponent(itemId)}`, {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/octet-stream' },
-                                    body: buf
+                            // Proactively upload buffer to local server for phone Wi-Fi streaming if server is available
+                            if (checkServerSyncAvailable()) {
+                                file.arrayBuffer().then(buf => {
+                                    fetch(`/api/sync/upload-file?id=${encodeURIComponent(itemId)}`, {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/octet-stream' },
+                                        body: buf
+                                    }).catch(() => {});
                                 }).catch(() => {});
-                            }).catch(() => {});
+                            }
                         }
                     }).catch(e => console.error("Error creating url", e));
                 }

@@ -280,13 +280,14 @@
         #name-modal { z-index: 1001; }
         .modal-content {
             background-color: var(--bg-secondary); border-radius: 1rem;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.2); width: 90%; height: 90%;
-            max-width: 1200px; max-height: 90vh; display: flex; overflow: hidden;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2); width: 94%; height: 94%;
+            max-width: 1600px; max-height: 94vh; display: flex; overflow: hidden;
             margin: auto; align-items: stretch; justify-content: center;
         }
         .modal-image-container, .modal-main-content {
-            flex: 3; background-color: var(--bg-primary); display: flex;
+            flex: 1 1 0; min-width: 0; background-color: var(--bg-primary); display: flex;
             align-items: center; justify-content: center; padding: 1rem; position: relative;
+            overflow: hidden;
         }
         /* Modal media styles */
         .modal-image-container img, .modal-image-container video,
@@ -296,9 +297,22 @@
         .hidden-media { display: none !important; }
 
         .modal-details-container {
-            flex: 1; min-width: 320px; padding: 1.5rem; display: flex;
-            flex-direction: column; justify-content: center; border-left: 1px solid var(--border-primary);
-            overflow-y: auto;
+            flex: 0 0 390px; width: 390px; max-width: 440px; min-width: 340px; padding: 1.5rem; display: flex;
+            flex-direction: column; justify-content: flex-start; border-left: 1px solid var(--border-primary);
+            overflow-y: auto; box-sizing: border-box;
+        }
+        .modal-details-container::-webkit-scrollbar {
+            width: 6px;
+        }
+        .modal-details-container::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .modal-details-container::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 3px;
+        }
+        .modal-details-container::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.3);
         }
         .modal-details-container h3 { margin: 0 0 1rem 0; word-wrap: break-word; }
         

@@ -148,13 +148,7 @@ const ImageModal = ({
         const handleWheel = (e) => {
             const detailsPanel = e.target.closest('.modal-details-container');
             if (detailsPanel) {
-                const isScrollable = detailsPanel.scrollHeight > detailsPanel.clientHeight;
-                if (isScrollable) {
-                    const atTop = detailsPanel.scrollTop === 0;
-                    const atBottom = Math.abs(detailsPanel.scrollHeight - detailsPanel.clientHeight - detailsPanel.scrollTop) < 2;
-                    if (e.deltaY < 0 && !atTop) return;
-                    if (e.deltaY > 0 && !atBottom) return;
-                }
+                return; // Let user scroll details panel smoothly without switching media
             }
 
             e.preventDefault();
@@ -409,7 +403,7 @@ const ImageModal = ({
                     onMouseMove={handleMouseMove}
                     onMouseUp={handleMouseUp}
                     onMouseLeave={handleMouseUp}
-                    style={{ flex: 3, position: 'relative', display: 'flex', justifyContent: 'center', alignItems: 'center', background: '#000', overflow: 'hidden' }}
+                    style={{ flex: '1 1 0', minWidth: 0, position: 'relative', display: 'flex', justifyContent: 'center', alignItems: 'center', background: '#000', overflow: 'hidden' }}
                 >
                     {promptMessage && (
                         <div className="prompt-overlay fade-in" style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', background: 'rgba(0,0,0,0.8)', color: '#fff', padding: '15px 30px', borderRadius: '30px', fontSize: '1.2rem', fontWeight: 600, zIndex: 100, pointerEvents: 'none' }}>

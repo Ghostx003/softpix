@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 
+let isServerSyncAvailable = null; // null = unchecked, true = available, false = unavailable
+
+export function checkServerSyncAvailable() {
+    return isServerSyncAvailable === true;
+}
+
 export function useNetworkSync({ 
     localFiles, 
     folders, 
@@ -16,57 +22,77 @@ export function useNetworkSync({
     const [isRemoteClient, setIsRemoteClient] = useState(false);
     const [remoteCatalog, setRemoteCatalog] = useState(null);
     const [networkIps, setNetworkIps] = useState([]);
+    const [serverSyncActive, setServerSyncActive] = useState(isServerSyncAvailable === true);
     const localFilesMapRef = useRef(new Map());
 
-    // Fetch network IP addresses for display on desktop
+    // Probe once whether local Wi-Fi sync server is running
     useEffect(() => {
+        let isMounted = true;
+        
+        if (isServerSyncAvailable === false) return;
+
         fetch('/api/ip')
-            .then(res => res.json())
+            .then(res => {
+                if (res.ok) {
+                    isServerSyncAvailable = true;
+                    if (isMounted) setServerSyncActive(true);
+                    return res.json();
+                } else {
+                    isServerSyncAvailable = false;
+                    if (isMounted) setServerSyncActive(false);
+                    return null;
+                }
+            })
             .then(data => {
-                if (data.ips && Array.isArray(data.ips)) {
+                if (data && Array.isArray(data.ips) && isMounted) {
                     setNetworkIps(data.ips);
                 }
             })
-            .catch(() => {});
+            .catch(() => {
+                isServerSyncAvailable = false;
+                if (isMounted) setServerSyncActive(false);
+            });
+
+        return () => { isMounted = false; };
     }, []);
 
-    // 1. Host side: Sync catalog state whenever desktop files or metadata change
+    // 1. Host side: Sync catalog state whenever desktop files or metadata change (only if server sync is active)
     useEffect(() => {
-        if (localFiles && localFiles.length > 0) {
-            const filesMeta = localFiles.map(f => ({
-                id: f.id,
-                name: f.name,
-                isVideo: f.isVideo,
-                folderTags: f.folderTags,
-                allFolderTags: f.allFolderTags,
-                folderId: f.folderId,
-                lastModified: f.lastModified,
-                type: 'remote',
-                url: `/api/media?id=${encodeURIComponent(f.id)}`
-            }));
+        if (!serverSyncActive || !localFiles || localFiles.length === 0) return;
 
-            const catalog = {
-                folders: (folders || []).map(f => ({ id: f.id, name: f.name, enabled: f.enabled })),
-                files: filesMeta,
-                pinnedImages: pinnedImages || [],
-                imageRatings: imageRatings || {},
-                imageTags: imageTags || {},
-                imageSecondaryTags: imageSecondaryTags || {},
-                imageBookmarks: imageBookmarks || {},
-                imagePopularity: imagePopularity || {},
-                externalUrls: externalUrls || [],
-                customCategories: customCategories || [],
-                isGlobalMute: isGlobalMute,
-                updatedAt: Date.now()
-            };
+        const filesMeta = localFiles.map(f => ({
+            id: f.id,
+            name: f.name,
+            isVideo: f.isVideo,
+            folderTags: f.folderTags,
+            allFolderTags: f.allFolderTags,
+            folderId: f.folderId,
+            lastModified: f.lastModified,
+            type: 'remote',
+            url: `/api/media?id=${encodeURIComponent(f.id)}`
+        }));
 
-            fetch('/api/sync/host-catalog', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(catalog)
-            }).catch(() => {});
-        }
-    }, [localFiles, folders, pinnedImages, imageRatings, imageTags, imageSecondaryTags, imageBookmarks, imagePopularity, externalUrls, customCategories, isGlobalMute]);
+        const catalog = {
+            folders: (folders || []).map(f => ({ id: f.id, name: f.name, enabled: f.enabled })),
+            files: filesMeta,
+            pinnedImages: pinnedImages || [],
+            imageRatings: imageRatings || {},
+            imageTags: imageTags || {},
+            imageSecondaryTags: imageSecondaryTags || {},
+            imageBookmarks: imageBookmarks || {},
+            imagePopularity: imagePopularity || {},
+            externalUrls: externalUrls || [],
+            customCategories: customCategories || [],
+            isGlobalMute: isGlobalMute,
+            updatedAt: Date.now()
+        };
+
+        fetch('/api/sync/host-catalog', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(catalog)
+        }).catch(() => {});
+    }, [serverSyncActive, localFiles, folders, pinnedImages, imageRatings, imageTags, imageSecondaryTags, imageBookmarks, imagePopularity, externalUrls, customCategories, isGlobalMute]);
 
     // 2. Host side: Build fast lookup map for local files
     useEffect(() => {
@@ -77,9 +103,9 @@ export function useNetworkSync({
         localFilesMapRef.current = map;
     }, [localFiles]);
 
-    // 3. Host side: Process pending media requests from phone clients
+    // 3. Host side: Process pending media requests from phone clients (only if server sync is active)
     useEffect(() => {
-        if (!localFiles || localFiles.length === 0) return;
+        if (!serverSyncActive || !localFiles || localFiles.length === 0) return;
 
         let isSubscribed = true;
         let timerId = null;
@@ -118,10 +144,15 @@ export function useNetworkSync({
             isSubscribed = false;
             if (timerId) clearTimeout(timerId);
         };
-    }, [localFiles]);
+    }, [serverSyncActive, localFiles]);
 
-    // 4. Remote Client side (Phone): Poll for host catalog if localFiles is empty
+    // 4. Remote Client side (Phone): Poll for host catalog if localFiles is empty (only if server sync is active)
     useEffect(() => {
+        if (!serverSyncActive || (localFiles && localFiles.length > 0)) {
+            setIsRemoteClient(false);
+            return;
+        }
+
         let isCancelled = false;
 
         const fetchCatalog = async () => {
@@ -133,8 +164,6 @@ export function useNetworkSync({
                         setRemoteCatalog(prev => {
                             if (!prev) return catalog;
                             if (prev.updatedAt && prev.updatedAt === catalog.updatedAt) return prev;
-                            
-                            // Accept the new catalog since updatedAt is different (host state changed)
                             return catalog;
                         });
                         setIsRemoteClient(true);
@@ -143,21 +172,17 @@ export function useNetworkSync({
             } catch (e) {}
         };
 
-        if (!localFiles || localFiles.length === 0) {
-            fetchCatalog();
-            const timer = setInterval(fetchCatalog, 3000);
-            return () => {
-                isCancelled = true;
-                clearInterval(timer);
-            };
-        } else {
-            setIsRemoteClient(false);
-        }
-    }, [localFiles]);
+        fetchCatalog();
+        const timer = setInterval(fetchCatalog, 3000);
+        return () => {
+            isCancelled = true;
+            clearInterval(timer);
+        };
+    }, [serverSyncActive, localFiles]);
 
-    // Function to upload a single file buffer proactively from Desktop
+    // Function to upload a single file buffer proactively from Desktop (only if server sync is active)
     const uploadFileProactively = (itemId, itemHandle) => {
-        if (!itemHandle || !itemId) return;
+        if (!serverSyncActive || !itemHandle || !itemId) return;
         itemHandle.getFile().then(file => {
             file.arrayBuffer().then(buf => {
                 fetch(`/api/sync/upload-file?id=${encodeURIComponent(itemId)}`, {
